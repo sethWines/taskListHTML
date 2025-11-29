@@ -185,9 +185,34 @@
             --primary-orange-darkest: #b45309;
             --accent-color: #fbbf24;
             --accent-hover: #f59e0b;
-            --gradient-header: linear-gradient(135deg, #000000 0%, #f59e0b 100%);
-            --gradient-text: linear-gradient(135deg, #fbbf24 0%, #000000 100%);
-            --gradient-background: linear-gradient(to right, #f59e0b 0%, #d97706 5%, #b45309 10%, #000000 15%, #000000 85%, #b45309 90%, #d97706 95%, #f59e0b 100%);
+            --gradient-header: linear-gradient(135deg, #1a1410 0%, #2d2416 25%, #3d2a14 50%, #2a1810 75%, #1a1410 100%);
+            --gradient-text: linear-gradient(90deg, #fbbf24 0%, #f59e0b 15%, #fb923c 30%, #f97316 45%, #ea580c 60%, #dc2626 75%, #be123c 85%, #fbbf24 100%);
+            --gradient-background: linear-gradient(to right, 
+                #b45309 0%, 
+                #d97706 2%, 
+                #f59e0b 4%, 
+                #fbbf24 6%, 
+                #fb923c 8%, 
+                #f97316 10%, 
+                #ea580c 12%, 
+                #dc2626 14%, 
+                #0a0805 18%, 
+                #0a0805 82%, 
+                #dc2626 86%, 
+                #ea580c 88%, 
+                #f97316 90%, 
+                #fb923c 92%, 
+                #fbbf24 94%, 
+                #f59e0b 96%, 
+                #d97706 98%, 
+                #b45309 100%);
+            --bg-main: #0a0805;
+            --bg-container: #14100a;
+            --bg-container-dark: #0a0805;
+            --bg-card: #1f1810;
+            --bg-hint: #18120d;
+            --border-main: #3d2a14;
+            --border-section: #1f1810;
         }
 
         [data-theme="cyan"] {
@@ -354,12 +379,12 @@
         }
 
         [data-theme="golden"] .theme-toggle-btn {
-            background: rgba(251, 191, 36, 0.15);
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(249, 115, 22, 0.15) 33%, rgba(234, 88, 12, 0.15) 66%, rgba(220, 38, 38, 0.15) 100%);
             color: #fbbf24;
             border-color: #fbbf24;
         }
         [data-theme="golden"] .theme-toggle-btn:hover {
-            background: rgba(251, 191, 36, 0.25);
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(249, 115, 22, 0.25) 33%, rgba(234, 88, 12, 0.25) 66%, rgba(220, 38, 38, 0.25) 100%);
         }
 
         [data-theme="cyan"] .theme-toggle-btn {
@@ -975,10 +1000,11 @@
             background: rgba(251, 191, 36, 0.15);
         }
         [data-theme="golden"] .task-checkbox:hover {
-            background: rgba(251, 191, 36, 0.25);
+            border-color: #f97316;
         }
         [data-theme="golden"] .task-checkbox:checked {
-            background: #fbbf24;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 20%, #fb923c 40%, #f97316 60%, #ea580c 80%, #dc2626 100%);
+            border-color: #fbbf24;
         }
 
         [data-theme="cyan"] .task-checkbox {
@@ -1260,10 +1286,10 @@
             background: rgba(251, 191, 36, 0.15);
         }
         [data-theme="golden"] .subtask-checkbox:hover {
-            background: rgba(251, 191, 36, 0.25);
+            background: rgba(249, 115, 22, 0.25);
         }
         [data-theme="golden"] .subtask-checkbox:checked {
-            background: #fbbf24;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 20%, #fb923c 40%, #f97316 60%, #ea580c 80%, #dc2626 100%);
         }
 
         [data-theme="cyan"] .subtask-checkbox {
@@ -1693,7 +1719,7 @@
         }
         [data-theme="golden"] .task-edit-btn:hover,
         [data-theme="golden"] .task-editor-btn:hover {
-            background: rgba(251, 191, 36, 0.25);
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(249, 115, 22, 0.25) 50%, rgba(234, 88, 12, 0.25) 100%);
         }
 
         [data-theme="cyan"] .task-edit-btn,
@@ -3638,8 +3664,26 @@
             --primary-orange-dark: #f59e0b;
             --primary-orange-darker: #d97706;
             --primary-orange-darkest: #b45309;
-            --gradient-background: linear-gradient(to right, #f59e0b 0%, #d97706 5%, #b45309 10%, #000000 15%, #000000 85%, #b45309 90%, #d97706 95%, #f59e0b 100%);
-            --gradient-header: linear-gradient(135deg, #000000 0%, #f59e0b 100%);
+            --gradient-background: linear-gradient(to right, 
+                #b45309 0%, 
+                #d97706 2%, 
+                #f59e0b 4%, 
+                #fbbf24 6%, 
+                #fb923c 8%, 
+                #f97316 10%, 
+                #ea580c 12%, 
+                #dc2626 14%, 
+                #0a0805 18%, 
+                #0a0805 82%, 
+                #dc2626 86%, 
+                #ea580c 88%, 
+                #f97316 90%, 
+                #fb923c 92%, 
+                #fbbf24 94%, 
+                #f59e0b 96%, 
+                #d97706 98%, 
+                #b45309 100%);
+            --gradient-header: linear-gradient(135deg, #1a1410 0%, #2d2416 25%, #3d2a14 50%, #2a1810 75%, #1a1410 100%);
         }
         [data-theme="cyan"] {
             --primary-orange: #22d3ee;
@@ -3806,10 +3850,10 @@
             background: rgba(251, 191, 36, 0.15);
         }
         [data-theme="golden"] .editor-task-checkbox:hover {
-            background: rgba(251, 191, 36, 0.25);
+            background: rgba(249, 115, 22, 0.25);
         }
         [data-theme="golden"] .editor-task-checkbox:checked {
-            background: #fbbf24;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 20%, #fb923c 40%, #f97316 60%, #ea580c 80%, #dc2626 100%);
         }
 
         [data-theme="cyan"] .editor-task-checkbox {
@@ -4082,7 +4126,7 @@
             border-color: #fbbf24;
         }
         [data-theme="golden"] .add-subtask-btn:hover {
-            background: rgba(251, 191, 36, 0.25);
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(249, 115, 22, 0.25) 50%, rgba(234, 88, 12, 0.25) 100%);
         }
         [data-theme="cyan"] .add-subtask-btn {
             background: rgba(34, 211, 238, 0.15);
