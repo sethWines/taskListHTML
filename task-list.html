@@ -2284,6 +2284,14 @@
                 // Performance Optimization: Debounced saves
                 this.saveTimeout = null;
                 this.pendingSave = false;
+                
+                // Performance Optimization: Virtual Scrolling
+                this.virtualScrollEnabled = true; // Can be toggled if needed
+                this.itemsPerPage = 50; // Show 50 tasks at a time
+                this.currentPage = 0;
+                this.totalPages = 0;
+                this.visibleTasks = [];
+                this.allSortedTasks = []; // Cache of sorted/filtered tasks
                 this.autoBackupInterval = null;
                 this.directoryHandle = null;
                 this.dbName = 'TaskManagerDB';
@@ -2500,18 +2508,21 @@
                 // Filters
                 document.getElementById('filter-select').addEventListener('change', (e) => {
                     this.currentFilter = e.target.value;
+                    this.resetVirtualScroll(); // Reset pagination when filter changes
                     this.render();
                 });
 
                 // Search
                 document.getElementById('search-input').addEventListener('input', (e) => {
                     this.searchTerm = e.target.value;
+                    this.resetVirtualScroll(); // Reset pagination when search changes
                     this.render();
                 });
 
                 // Sort
                 document.getElementById('sort-select').addEventListener('change', (e) => {
                     this.sortMethod = e.target.value;
+                    this.resetVirtualScroll(); // Reset pagination when sort changes
                     this.render();
                 });
 
@@ -3101,11 +3112,160 @@
                 if (filteredTasks.length === 0) {
                     taskList.innerHTML = '';
                     emptyState.style.display = 'block';
+                    return;
+                }
+                
+                emptyState.style.display = 'none';
+                
+                // Sort tasks using the selected sort method
+                const sortedTasks = this.sortTasks(filteredTasks);
+                this.allSortedTasks = sortedTasks; // Cache for virtual scrolling
+                
+                // Performance Optimization: Virtual Scrolling
+                if (this.virtualScrollEnabled && sortedTasks.length > this.itemsPerPage) {
+                    this.renderVirtualScrolled(sortedTasks, taskList);
                 } else {
-                    emptyState.style.display = 'none';
-                    // Sort tasks using the selected sort method
-                    const sortedTasks = this.sortTasks(filteredTasks);
+                    // For small lists, render all (no overhead)
                     taskList.innerHTML = sortedTasks.map(task => this.renderTask(task)).join('');
+                }
+            }
+            
+            // Performance Optimization: Virtual Scrolling Implementation
+            renderVirtualScrolled(sortedTasks, taskList) {
+                // Calculate pagination
+                this.totalPages = Math.ceil(sortedTasks.length / this.itemsPerPage);
+                
+                // Get visible tasks for current page
+                const startIdx = this.currentPage * this.itemsPerPage;
+                const endIdx = Math.min(startIdx + this.itemsPerPage, sortedTasks.length);
+                this.visibleTasks = sortedTasks.slice(startIdx, endIdx);
+                
+                // Render visible tasks
+                const tasksHTML = this.visibleTasks.map(task => this.renderTask(task)).join('');
+                
+                // Add load more button if there are more pages
+                const hasMore = this.currentPage < this.totalPages - 1;
+                const loadMoreButton = hasMore ? `
+                    <div class="load-more-container" style="text-align: center; padding: 20px;">
+                        <button class="load-more-btn" onclick="app.loadMoreTasks()" 
+                                style="padding: 12px 24px; font-size: 1em; cursor: pointer; 
+                                       background: linear-gradient(135deg, var(--primary-orange) 0%, var(--primary-orange-dark) 100%);
+                                       color: white; border: none; border-radius: 8px; 
+                                       box-shadow: 0 4px 12px rgba(255, 138, 101, 0.3);
+                                       transition: transform 0.2s;">
+                            📥 Load More Tasks (${sortedTasks.length - endIdx} remaining)
+                        </button>
+                        <div style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">
+                            Showing ${endIdx} of ${sortedTasks.length} tasks
+                        </div>
+                    </div>
+                ` : `
+                    <div class="all-loaded-indicator" style="text-align: center; padding: 20px; 
+                                                              color: var(--text-secondary); font-size: 0.9em;">
+                        ✅ All ${sortedTasks.length} tasks loaded
+                    </div>
+                `;
+                
+                taskList.innerHTML = tasksHTML + loadMoreButton;
+                
+                // Setup Intersection Observer for automatic loading
+                this.setupIntersectionObserver();
+            }
+            
+            // Load more tasks (manual button or auto-trigger)
+            loadMoreTasks() {
+                if (this.currentPage < this.totalPages - 1) {
+                    this.currentPage++;
+                    console.log(`📄 Loading page ${this.currentPage + 1} of ${this.totalPages}`);
+                    
+                    // Get tasks for this page
+                    const startIdx = this.currentPage * this.itemsPerPage;
+                    const endIdx = Math.min(startIdx + this.itemsPerPage, this.allSortedTasks.length);
+                    const newTasks = this.allSortedTasks.slice(startIdx, endIdx);
+                    
+                    // Append to visible tasks
+                    this.visibleTasks = this.visibleTasks.concat(newTasks);
+                    
+                    // Render just the new tasks (append, don't replace)
+                    const taskList = document.getElementById('task-list');
+                    const loadMoreContainer = taskList.querySelector('.load-more-container, .all-loaded-indicator');
+                    
+                    if (loadMoreContainer) {
+                        // Remove old load more button
+                        loadMoreContainer.remove();
+                    }
+                    
+                    // Append new tasks
+                    const newTasksHTML = newTasks.map(task => this.renderTask(task)).join('');
+                    
+                    // Add new load more button if needed
+                    const hasMore = this.currentPage < this.totalPages - 1;
+                    const loadMoreButton = hasMore ? `
+                        <div class="load-more-container" style="text-align: center; padding: 20px;">
+                            <button class="load-more-btn" onclick="app.loadMoreTasks()" 
+                                    style="padding: 12px 24px; font-size: 1em; cursor: pointer; 
+                                           background: linear-gradient(135deg, var(--primary-orange) 0%, var(--primary-orange-dark) 100%);
+                                           color: white; border: none; border-radius: 8px; 
+                                           box-shadow: 0 4px 12px rgba(255, 138, 101, 0.3);
+                                           transition: transform 0.2s;">
+                                📥 Load More Tasks (${this.allSortedTasks.length - endIdx} remaining)
+                            </button>
+                            <div style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">
+                                Showing ${endIdx} of ${this.allSortedTasks.length} tasks
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="all-loaded-indicator" style="text-align: center; padding: 20px; 
+                                                                  color: var(--text-secondary); font-size: 0.9em;">
+                            ✅ All ${this.allSortedTasks.length} tasks loaded
+                        </div>
+                    `;
+                    
+                    taskList.insertAdjacentHTML('beforeend', newTasksHTML + loadMoreButton);
+                    
+                    // Re-setup observer
+                    this.setupIntersectionObserver();
+                }
+            }
+            
+            // Setup Intersection Observer for automatic loading
+            setupIntersectionObserver() {
+                // Disconnect previous observer if exists
+                if (this.intersectionObserver) {
+                    this.intersectionObserver.disconnect();
+                }
+                
+                // Find the load more button
+                const loadMoreBtn = document.querySelector('.load-more-btn');
+                if (!loadMoreBtn) return;
+                
+                // Create observer that triggers when button comes into view
+                this.intersectionObserver = new IntersectionObserver(
+                    (entries) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting && this.currentPage < this.totalPages - 1) {
+                                console.log('🔍 Load more button visible, auto-loading...');
+                                this.loadMoreTasks();
+                            }
+                        });
+                    },
+                    {
+                        root: null, // Use viewport
+                        rootMargin: '100px', // Trigger 100px before button is visible
+                        threshold: 0.1
+                    }
+                );
+                
+                this.intersectionObserver.observe(loadMoreBtn);
+            }
+            
+            // Reset virtual scrolling (called when filter/sort changes)
+            resetVirtualScroll() {
+                this.currentPage = 0;
+                this.visibleTasks = [];
+                if (this.intersectionObserver) {
+                    this.intersectionObserver.disconnect();
+                    this.intersectionObserver = null;
                 }
             }
 
