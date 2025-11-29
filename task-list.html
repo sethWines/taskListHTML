@@ -202,6 +202,76 @@
             --gradient-background: linear-gradient(to right, #06b6d4 0%, #0891b2 5%, #0e7490 10%, #000000 15%, #000000 85%, #0e7490 90%, #0891b2 95%, #06b6d4 100%);
         }
 
+        [data-theme="synthwave"] {
+            --primary-orange: #a78bfa;
+            --primary-orange-dark: #8b5cf6;
+            --primary-orange-darker: #7c3aed;
+            --primary-orange-darkest: #6d28d9;
+            --accent-color: #a78bfa;
+            --accent-hover: #8b5cf6;
+            --gradient-header: linear-gradient(135deg, #1a0033 0%, #2d1b4e 50%, #1a0033 100%);
+            --gradient-text: linear-gradient(90deg, #a78bfa 0%, #ec4899 25%, #f59e0b 50%, #22c55e 75%, #06b6d4 100%);
+            --gradient-background: linear-gradient(to right, 
+                #7c3aed 0%, 
+                #a855f7 3%, 
+                #ec4899 6%, 
+                #f43f5e 9%, 
+                #f59e0b 12%, 
+                #0a0a0a 18%, 
+                #0a0a0a 82%, 
+                #f59e0b 88%, 
+                #f43f5e 91%, 
+                #ec4899 94%, 
+                #a855f7 97%, 
+                #7c3aed 100%);
+            --bg-main: #0a0514;
+            --bg-container: #12081f;
+            --bg-container-dark: #0a0514;
+            --bg-card: #1a0f2e;
+            --bg-hint: #150a26;
+            --border-main: #2d1b4e;
+            --border-section: #1a0f2e;
+        }
+
+        [data-theme="prism"] {
+            --primary-orange: #2dd4bf;
+            --primary-orange-dark: #14b8a6;
+            --primary-orange-darker: #0d9488;
+            --primary-orange-darkest: #0f766e;
+            --accent-color: #2dd4bf;
+            --accent-hover: #14b8a6;
+            --gradient-header: linear-gradient(135deg, #0a1929 0%, #1e3a5f 25%, #1a4d4d 50%, #2d1b4e 75%, #0a1929 100%);
+            --gradient-text: linear-gradient(90deg, #2dd4bf 0%, #06b6d4 15%, #3b82f6 30%, #8b5cf6 45%, #a855f7 60%, #ec4899 75%, #14b8a6 90%, #2dd4bf 100%);
+            --gradient-background: linear-gradient(to right, 
+                #0d9488 0%, 
+                #14b8a6 2%, 
+                #2dd4bf 4%, 
+                #06b6d4 6%, 
+                #3b82f6 8%, 
+                #6366f1 10%, 
+                #8b5cf6 12%, 
+                #a855f7 14%, 
+                #020408 18%, 
+                #020408 82%, 
+                #a855f7 86%, 
+                #8b5cf6 88%, 
+                #6366f1 90%, 
+                #3b82f6 92%, 
+                #06b6d4 94%, 
+                #2dd4bf 96%, 
+                #14b8a6 98%, 
+                #0d9488 100%);
+            --bg-main: #020408;
+            --bg-container: #0a1218;
+            --bg-container-dark: #020408;
+            --bg-card: #0f1a24;
+            --bg-hint: #0d1520;
+            --border-main: #1e3a5f;
+            --border-section: #0f1a24;
+        }
+
+
+
         /* ==================== Theme Selector Styles ==================== */
         .theme-selector {
             position: relative;
@@ -301,6 +371,24 @@
             background: rgba(34, 211, 238, 0.25);
         }
 
+        [data-theme="synthwave"] .theme-toggle-btn {
+            background: linear-gradient(90deg, rgba(167, 139, 250, 0.15) 0%, rgba(236, 72, 153, 0.15) 50%, rgba(245, 158, 11, 0.15) 100%);
+            color: #a78bfa;
+        }
+
+        [data-theme="synthwave"] .theme-toggle-btn:hover {
+            background: linear-gradient(90deg, rgba(167, 139, 250, 0.25) 0%, rgba(236, 72, 153, 0.25) 50%, rgba(245, 158, 11, 0.25) 100%);
+        }
+
+        [data-theme="prism"] .theme-toggle-btn {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.15) 0%, rgba(59, 130, 246, 0.15) 33%, rgba(139, 92, 246, 0.15) 66%, rgba(168, 85, 247, 0.15) 100%);
+            color: #2dd4bf;
+        }
+
+        [data-theme="prism"] .theme-toggle-btn:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.25) 0%, rgba(59, 130, 246, 0.25) 33%, rgba(139, 92, 246, 0.25) 66%, rgba(236, 72, 153, 0.25) 100%);
+        }
+
         .theme-dropdown {
             position: absolute;
             top: 50px;
@@ -314,6 +402,7 @@
             gap: 4px;
             min-width: 180px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            z-index: 10000;
         }
 
         .theme-dropdown.active {
@@ -903,6 +992,32 @@
             background: #22d3ee;
         }
 
+        [data-theme="synthwave"] .task-checkbox {
+            border-color: #a78bfa;
+        }
+
+        [data-theme="synthwave"] .task-checkbox:hover {
+            border-color: #ec4899;
+        }
+
+        [data-theme="synthwave"] .task-checkbox:checked {
+            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #f59e0b 100%);
+            border-color: #a78bfa;
+        }
+
+        [data-theme="prism"] .task-checkbox {
+            border-color: #2dd4bf;
+        }
+
+        [data-theme="prism"] .task-checkbox:hover {
+            border-color: #8b5cf6;
+        }
+
+        [data-theme="prism"] .task-checkbox:checked {
+            background: linear-gradient(135deg, #2dd4bf 0%, #06b6d4 20%, #3b82f6 40%, #8b5cf6 60%, #a855f7 80%, #ec4899 100%);
+            border-color: #2dd4bf;
+        }
+
         .task-content {
             flex: 1;
             min-width: 0;
@@ -1160,6 +1275,28 @@
         }
         [data-theme="cyan"] .subtask-checkbox:checked {
             background: #22d3ee;
+        }
+
+        [data-theme="synthwave"] .subtask-checkbox {
+            border-color: #a78bfa;
+            background: rgba(167, 139, 250, 0.15);
+        }
+        [data-theme="synthwave"] .subtask-checkbox:hover {
+            background: rgba(236, 72, 153, 0.25);
+        }
+        [data-theme="synthwave"] .subtask-checkbox:checked {
+            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #f59e0b 100%);
+        }
+
+        [data-theme="prism"] .subtask-checkbox {
+            border-color: #2dd4bf;
+            background: rgba(45, 212, 191, 0.15);
+        }
+        [data-theme="prism"] .subtask-checkbox:hover {
+            background: rgba(139, 92, 246, 0.25);
+        }
+        [data-theme="prism"] .subtask-checkbox:checked {
+            background: linear-gradient(135deg, #2dd4bf 0%, #06b6d4 20%, #3b82f6 40%, #8b5cf6 60%, #a855f7 80%, #ec4899 100%);
         }
 
         .subtask-text {
@@ -1570,6 +1707,28 @@
             background: rgba(34, 211, 238, 0.25);
         }
 
+        [data-theme="synthwave"] .task-edit-btn,
+        [data-theme="synthwave"] .task-editor-btn {
+            background: rgba(167, 139, 250, 0.15);
+            color: #a78bfa;
+        }
+
+        [data-theme="synthwave"] .task-edit-btn:hover,
+        [data-theme="synthwave"] .task-editor-btn:hover {
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.25) 0%, rgba(236, 72, 153, 0.25) 100%);
+        }
+
+        [data-theme="prism"] .task-edit-btn,
+        [data-theme="prism"] .task-editor-btn {
+            background: rgba(45, 212, 191, 0.15);
+            color: #2dd4bf;
+        }
+
+        [data-theme="prism"] .task-edit-btn:hover,
+        [data-theme="prism"] .task-editor-btn:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.25) 0%, rgba(59, 130, 246, 0.25) 50%, rgba(139, 92, 246, 0.25) 100%);
+        }
+
         .task-archive-btn {
             background: var(--bg-card, #21262d);
             color: var(--text-primary, #e0e0e0);
@@ -1914,6 +2073,14 @@
                     <div class="theme-option" onclick="app.setTheme('cyan')" data-theme="cyan">
                         <span class="theme-color-preview" style="background: #22d3ee;"></span>
                         <span>Cyan Sky</span>
+                    </div>
+                    <div class="theme-option" onclick="app.setTheme('synthwave')" data-theme="synthwave">
+                        <span class="theme-color-preview" style="background: linear-gradient(90deg, #a78bfa 0%, #ec4899 50%, #f59e0b 100%);"></span>
+                        <span>Synth Wave</span>
+                    </div>
+                    <div class="theme-option" onclick="app.setTheme('prism')" data-theme="prism">
+                        <span class="theme-color-preview" style="background: linear-gradient(90deg, #2dd4bf 0%, #3b82f6 33%, #8b5cf6 66%, #ec4899 100%);"></span>
+                        <span>Dark Prism</span>
                     </div>
                 </div>
             </div>
@@ -3483,6 +3650,54 @@
             --gradient-header: linear-gradient(135deg, #000000 0%, #06b6d4 100%);
         }
 
+        [data-theme="synthwave"] {
+            --primary-orange: #a78bfa;
+            --primary-orange-dark: #8b5cf6;
+            --primary-orange-darker: #7c3aed;
+            --primary-orange-darkest: #6d28d9;
+            --gradient-background: linear-gradient(to right, 
+                #7c3aed 0%, 
+                #a855f7 3%, 
+                #ec4899 6%, 
+                #f43f5e 9%, 
+                #f59e0b 12%, 
+                #0a0a0a 18%, 
+                #0a0a0a 82%, 
+                #f59e0b 88%, 
+                #f43f5e 91%, 
+                #ec4899 94%, 
+                #a855f7 97%, 
+                #7c3aed 100%);
+            --gradient-header: linear-gradient(135deg, #1a0033 0%, #2d1b4e 50%, #1a0033 100%);
+        }
+
+        [data-theme="prism"] {
+            --primary-orange: #2dd4bf;
+            --primary-orange-dark: #14b8a6;
+            --primary-orange-darker: #0d9488;
+            --primary-orange-darkest: #0f766e;
+            --gradient-background: linear-gradient(to right, 
+                #0d9488 0%, 
+                #14b8a6 2%, 
+                #2dd4bf 4%, 
+                #06b6d4 6%, 
+                #3b82f6 8%, 
+                #6366f1 10%, 
+                #8b5cf6 12%, 
+                #a855f7 14%, 
+                #020408 18%, 
+                #020408 82%, 
+                #a855f7 86%, 
+                #8b5cf6 88%, 
+                #6366f1 90%, 
+                #3b82f6 92%, 
+                #06b6d4 94%, 
+                #2dd4bf 96%, 
+                #14b8a6 98%, 
+                #0d9488 100%);
+            --gradient-header: linear-gradient(135deg, #0a1929 0%, #1e3a5f 25%, #1a4d4d 50%, #2d1b4e 75%, #0a1929 100%);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         /* Editor checkbox styling - styled like Edit/Editor buttons */
@@ -3606,6 +3821,28 @@
         }
         [data-theme="cyan"] .editor-task-checkbox:checked {
             background: #22d3ee;
+        }
+        
+        [data-theme="synthwave"] .editor-task-checkbox {
+            border-color: #a78bfa;
+            background: rgba(167, 139, 250, 0.15);
+        }
+        [data-theme="synthwave"] .editor-task-checkbox:hover {
+            background: rgba(236, 72, 153, 0.25);
+        }
+        [data-theme="synthwave"] .editor-task-checkbox:checked {
+            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #f59e0b 100%);
+        }
+        
+        [data-theme="prism"] .editor-task-checkbox {
+            border-color: #2dd4bf;
+            background: rgba(45, 212, 191, 0.15);
+        }
+        [data-theme="prism"] .editor-task-checkbox:hover {
+            background: rgba(139, 92, 246, 0.25);
+        }
+        [data-theme="prism"] .editor-task-checkbox:checked {
+            background: linear-gradient(135deg, #2dd4bf 0%, #06b6d4 20%, #3b82f6 40%, #8b5cf6 60%, #a855f7 80%, #ec4899 100%);
         }
         
         body {
@@ -3854,6 +4091,22 @@
         }
         [data-theme="cyan"] .add-subtask-btn:hover {
             background: rgba(34, 211, 238, 0.25);
+        }
+        [data-theme="synthwave"] .add-subtask-btn {
+            background: rgba(167, 139, 250, 0.15);
+            color: #a78bfa;
+            border-color: #a78bfa;
+        }
+        [data-theme="synthwave"] .add-subtask-btn:hover {
+            background: linear-gradient(90deg, rgba(167, 139, 250, 0.25) 0%, rgba(236, 72, 153, 0.25) 100%);
+        }
+        [data-theme="prism"] .add-subtask-btn {
+            background: rgba(45, 212, 191, 0.15);
+            color: #2dd4bf;
+            border-color: #2dd4bf;
+        }
+        [data-theme="prism"] .add-subtask-btn:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.25) 0%, rgba(59, 130, 246, 0.25) 50%, rgba(139, 92, 246, 0.25) 100%);
         }
     </style>
 </head>
