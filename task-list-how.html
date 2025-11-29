@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Use - Task List Manager</title>
+    
+    <!--
+    ========================================
+    PORTABLE VERSION - NO EXTERNAL DEPENDENCIES
+    ========================================
+    
+    This file is completely self-contained with all CSS inlined.
+    You can move this folder anywhere or share it with others.
+    No external stylesheets or resources are required.
+    
+    VERSION: 1.0 (Portable)
+    ========================================
+    -->
+    
+    <style>
+        /* ==================== Shared Theme Styles (Inlined for Portability) ==================== */
+        
+        /* ==================== CSS Variables - Color Scheme ==================== */
+        :root {
+            /* Primary Colors */
+            --primary-orange: #ffa834;        /* Bright burnt orange */
+            --primary-orange-dark: #d67d20;   /* Darker burnt orange */
+            --primary-orange-darker: #8a4d13; /* Very dark burnt orange (for gradients) */
+            --primary-orange-darkest: #4a2909;/* Almost black burnt orange (for gradients) */
+            --primary-black: #000000;         /* Pure black */
+            
+            /* Background Colors */
+            --bg-main: #0d1117;               /* Main dark background */
+            --bg-container: #161b22;          /* Container background */
+            --bg-container-dark: #0d1117;     /* Darker container sections */
+            --bg-card: #21262d;               /* Card/button background */
+            --bg-hint: #1c2128;               /* Hint box background */
+            
+            /* Border Colors */
+            --border-main: #30363d;           /* Main border color */
+            --border-section: #21262d;        /* Section divider */
+            
+            /* Text Colors */
+            --text-primary: #e0e0e0;          /* Primary text (light gray) */
+            --text-secondary: #6e7681;        /* Secondary text (muted) */
+            --text-white: #ffffff;            /* White text */
+            
+            /* Category Colors (for different link types) */
+            --color-troubleshooting: #f85149; /* Red */
+            --color-networking: #3fb950;      /* Green */
+            --color-comparisons: #d29922;     /* Yellow */
+            --color-games: #a371f7;           /* Purple */
+            --color-notes: #bc8cff;           /* Light purple */
+            
+            /* Gradients */
+            --gradient-header: linear-gradient(135deg, var(--primary-black) 0%, var(--primary-orange-dark) 100%);
+            --gradient-text: linear-gradient(135deg, var(--primary-orange) 0%, var(--primary-black) 100%);
+            --gradient-hover: linear-gradient(135deg, var(--primary-orange-dark) 0%, var(--primary-black) 100%);
+            --gradient-background: linear-gradient(to right, var(--primary-orange-dark) 0%, var(--primary-orange-darker) 5%, var(--primary-orange-darkest) 10%, var(--primary-black) 15%, var(--primary-black) 85%, var(--primary-orange-darkest) 90%, var(--primary-orange-darker) 95%, var(--primary-orange-dark) 100%);
+            
+            /* Task List Specific Variables */
+            --bg-secondary: #1c2128;              /* Task box background */
+            --bg-tertiary: #0d1117;               /* Subtle background elements */
+            --border-color: #30363d;              /* Task borders */
+            --accent-color: #ffa834;              /* Orange accent for buttons */
+            --accent-hover: #d67d20;              /* Darker orange on hover */
+        }
+
+        /* ==================== Base Styles ==================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.5;
+            color: var(--text-primary);
+            background: var(--gradient-background);
+            min-height: 100vh;
+            padding: 15px;
+        }
+
+        /* ==================== Container ==================== */
+        .container {
+            width: 90%;
+            max-width: 1600px;
+            margin: 0 auto;
+            background: var(--bg-container);
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+            border: 1px solid var(--border-main);
+        }
+
+        /* Responsive adjustments for container */
+        @media (max-width: 768px) {
+            .container {
+                width: 95%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                width: 98%;
+            }
+        }
+
+        /* ==================== Header ==================== */
+        header {
+            background: var(--gradient-header);
+            color: var(--text-white);
+            padding: 25px;
+            border-bottom: 2px solid var(--border-main);
+        }
+
+        header h1 {
+            font-size: 1.8em;
+            margin-bottom: 5px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--gradient-text);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header p {
+            font-size: 0.95em;
+            color: var(--primary-orange);
+            opacity: 0.85;
+        }
+
+        /* ==================== Main Content ==================== */
+        main {
+            padding: 20px 25px;
+        }
+
+        .section {
+            margin-bottom: 25px;
+            scroll-margin-top: 20px;
+        }
+
+        .section h2 {
+            color: var(--primary-orange);
+            font-size: 1.3em;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid var(--border-section);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        h2 {
+            color: var(--primary-orange);
+            font-size: 1.4em;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid var(--border-section);
+        }
+
+        h3 {
+            color: var(--primary-orange-dark);
+            font-size: 1.15em;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        p {
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+
+        ul, ol {
+            margin-left: 25px;
+            margin-bottom: 12px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        .meta {
+            font-size: 0.85em;
+            opacity: 0.85;
+        }
+
+        /* Page-specific styles */
+        .how-content {
+            padding: 25px;
+        }
+
+        .how-section {
+            margin-bottom: 35px;
+            padding: 20px;
+            background: var(--bg-secondary, #1c2128);
+            border-radius: 8px;
+            border: 1px solid var(--border-color, #30363d);
+        }
+
+        .how-section h2 {
+            color: var(--primary-orange, #ffa834);
+            font-size: 24px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .how-section h3 {
+            color: var(--text-primary, #e0e0e0);
+            font-size: 18px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .how-section p, .how-section li {
+            color: var(--text-secondary, #a0a0a0);
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .how-section ul, .how-section ol {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        .how-section li {
+            margin-bottom: 8px;
+        }
+
+        .feature-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .feature-item {
+            padding: 15px;
+            background: var(--bg-tertiary, #0d1117);
+            border-radius: 6px;
+            border-left: 3px solid var(--primary-orange, #ffa834);
+        }
+
+        .feature-item strong {
+            color: var(--text-primary, #e0e0e0);
+            font-size: 16px;
+        }
+
+        .warning-box {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .warning-box strong {
+            color: #fbbf24;
+        }
+
+        .tip-box {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .tip-box strong {
+            color: #3b82f6;
+        }
+
+        .success-box {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .success-box strong {
+            color: #22c55e;
+        }
+
+        .navigation {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            padding: 25px;
+            border-top: 2px solid var(--border-main, #30363d);
+            background: var(--bg-secondary, #1c2128);
+        }
+
+        .nav-btn {
+            padding: 12px 24px;
+            border: 2px solid var(--primary-orange, #ffa834);
+            border-radius: 8px;
+            background: var(--bg-container, #161b22);
+            color: var(--text-primary, #e0e0e0);
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-btn:hover {
+            background: var(--primary-orange, #ffa834);
+            color: #000;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 168, 52, 0.3);
+        }
+
+        .nav-btn-primary {
+            background: var(--primary-orange, #ffa834);
+            color: #000;
+        }
+
+        .nav-btn-primary:hover {
+            background: var(--accent-hover, #d67d20);
+        }
+
+        code {
+            background: var(--bg-tertiary, #0d1117);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: var(--primary-orange, #ffa834);
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .how-section h2 {
+                font-size: 20px;
+            }
+
+            .how-section h3 {
+                font-size: 16px;
+            }
+
+            .navigation {
+                flex-direction: column;
+            }
+
+            .nav-btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📖 Task List Manager - How to Use</h1>
+            <p class="meta">Learn about all the features and best practices</p>
+        </header>
+
+        <main class="how-content">
+            <!-- Getting Started -->
+            <div class="how-section">
+                <h2>🚀 Getting Started</h2>
+                <p>The Task List Manager helps you organize and track your tasks efficiently with features like subtasks, priorities, completion tracking, and multiple backup options.</p>
+                
+                <div class="tip-box">
+                    <strong>💡 Tip:</strong> All your tasks are automatically saved to your browser's local storage, so they persist between sessions!
+                </div>
+            </div>
+
+            <!-- Managing Tasks -->
+            <div class="how-section">
+                <h2>✅ Managing Tasks</h2>
+                
+                <h3>Adding a Task</h3>
+                <ol>
+                    <li>Enter a task title in the "Task Title" field</li>
+                    <li>Add a description in the "Task Description" field (optional)</li>
+                    <li>Select a priority level (Urgent, High, Medium, Low)</li>
+                    <li>Choose a category (Work, Personal, Shopping, Health, Other)</li>
+                    <li>Click "Add Task" button</li>
+                </ol>
+
+                <h3>Task Actions</h3>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <strong>✓ Complete/Uncomplete:</strong> Click the checkbox to mark a task as done. The completion date will be automatically added on the right side.
+                    </div>
+                    <div class="feature-item">
+                        <strong>✏️ Edit:</strong> Click the pencil icon to edit the task title or description inline.
+                    </div>
+                    <div class="feature-item">
+                        <strong>📦 Archive:</strong> Click the archive icon to move tasks to the archive. Archived tasks can be viewed using the "Archived" filter.
+                    </div>
+                    <div class="feature-item">
+                        <strong>🗑️ Delete:</strong> Click the trash icon to permanently delete a task (careful - this cannot be undone!).
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subtasks -->
+            <div class="how-section">
+                <h2>📋 Working with Subtasks</h2>
+                
+                <h3>Adding Subtasks</h3>
+                <ol>
+                    <li>Click "Add Subtask" button on any task</li>
+                    <li>Enter the subtask description</li>
+                    <li>Press Enter or click the add button</li>
+                </ol>
+
+                <h3>Subtask Features</h3>
+                <ul>
+                    <li>Check off subtasks as you complete them - completion dates are tracked</li>
+                    <li>Progress bar shows how many subtasks are completed</li>
+                    <li>Edit subtasks by clicking the edit icon</li>
+                    <li>Delete subtasks with the trash icon</li>
+                    <li>Toggle subtask visibility with the "Show/Hide Subtasks" button</li>
+                </ul>
+            </div>
+
+            <!-- Filtering and Organization -->
+            <div class="how-section">
+                <h2>🔍 Filtering and Organization</h2>
+                
+                <h3>Available Filters</h3>
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <strong>All:</strong> Shows all tasks (except archived)
+                    </div>
+                    <div class="feature-item">
+                        <strong>Active:</strong> Shows only incomplete tasks
+                    </div>
+                    <div class="feature-item">
+                        <strong>Completed:</strong> Shows only completed tasks
+                    </div>
+                    <div class="feature-item">
+                        <strong>🔥 Urgent / ⚡ High / 📌 Medium / 📍 Low:</strong> Filter by priority level
+                    </div>
+                    <div class="feature-item">
+                        <strong>📦 Archived:</strong> Shows only archived tasks (can be unarchived)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export and Backup -->
+            <div class="how-section">
+                <h2>💾 Export and Backup Features</h2>
+                
+                <h3>📧 Export for Email</h3>
+                <p>Creates a formatted text summary of your tasks that you can copy and paste into emails or documents. Includes:</p>
+                <ul>
+                    <li>Task counts and completion statistics</li>
+                    <li>Active tasks with subtasks</li>
+                    <li>Completed tasks with completion dates</li>
+                    <li>Archived tasks (if any)</li>
+                </ul>
+                <p><strong>How to use:</strong> Click "📧 Export for Email" → Click "📋 Copy to Clipboard" → Paste anywhere!</p>
+
+                <h3>💾 Manual Backup</h3>
+                <p>Downloads a complete JSON backup file with timestamp. This is your primary safety net.</p>
+                <ul>
+                    <li>Creates timestamped files: <code>tasks-backup-2025-11-07.json</code></li>
+                    <li>Save multiple versions for different points in time</li>
+                    <li>Store on USB drives, cloud storage, or multiple locations</li>
+                </ul>
+
+                <div class="success-box">
+                    <strong>✅ Best Practice:</strong> Create manual backups regularly, especially before major changes or at the end of each week!
+                </div>
+
+                <h3>📥 Import Tasks</h3>
+                <p>Restore tasks from a backup file. You can choose to:</p>
+                <ul>
+                    <li><strong>Merge:</strong> Add imported tasks to your existing tasks (combines both)</li>
+                    <li><strong>Replace:</strong> Replace all existing tasks with the backup (careful!)</li>
+                </ul>
+
+                <h3>🔄 Auto-Backup</h3>
+                <p>Automatically saves a single backup file to a folder of your choice.</p>
+                
+                <h3>How Auto-Backup Works:</h3>
+                <ol>
+                    <li>Click "🔄 Auto-Backup" button (turns green when enabled)</li>
+                    <li>Select a folder where the backup should be saved</li>
+                    <li>Grant permission (one-time only)</li>
+                    <li>The app will automatically save to <code>tasks-auto-backup.json</code>:
+                        <ul>
+                            <li>Every hour</li>
+                            <li>When you close the browser</li>
+                        </ul>
+                    </li>
+                </ol>
+
+                <div class="warning-box">
+                    <strong>⚠️ Important:</strong> Auto-backup overwrites the same file each time. It's meant for convenience, not version history. Always use manual backups for critical safety nets!
+                </div>
+
+                <div class="tip-box">
+                    <strong>💡 Browser Support:</strong> Auto-backup only works in Chrome, Edge, and Chromium-based browsers. Firefox and Safari users should rely on manual backups.
+                </div>
+            </div>
+
+            <!-- Data Storage and Portability -->
+            <div class="how-section">
+                <h2>💿 Data Storage and Portability</h2>
+                
+                <h3>Where Are My Tasks Stored?</h3>
+                <p>Your tasks are saved in your browser's <strong>localStorage</strong>, which means:</p>
+                <ul>
+                    <li>✅ Persists through browser refreshes and computer restarts</li>
+                    <li>✅ Completely private - stays on your computer</li>
+                    <li>✅ No internet connection required</li>
+                    <li>⚠️ Tied to the specific browser on this computer</li>
+                    <li>⚠️ Lost if you clear browser data/cache</li>
+                </ul>
+
+                <h3>Using Tasks on Multiple Computers</h3>
+                <ol>
+                    <li>On Computer A: Click "💾 Backup Tasks"</li>
+                    <li>Save the file to a USB drive, email it to yourself, or use cloud storage (OneDrive, Dropbox, etc.)</li>
+                    <li>On Computer B: Open the Task List Manager</li>
+                    <li>Click "📥 Import Tasks" and select the backup file</li>
+                    <li>Choose "Replace" for a fresh copy or "Merge" to combine with existing tasks</li>
+                </ol>
+
+                <div class="tip-box">
+                    <strong>💡 Pro Tip:</strong> Keep your backup files in OneDrive or Google Drive so they're always accessible from any computer!
+                </div>
+            </div>
+
+            <!-- Best Practices -->
+            <div class="how-section">
+                <h2>🎯 Best Practices</h2>
+                
+                <div class="feature-list">
+                    <div class="feature-item">
+                        <strong>Weekly Reviews:</strong> Archive completed tasks at the end of each week to keep your active list clean.
+                    </div>
+                    <div class="feature-item">
+                        <strong>Regular Backups:</strong> Create manual backups before clearing browser data or making major changes.
+                    </div>
+                    <div class="feature-item">
+                        <strong>Use Priorities:</strong> Mark urgent tasks so you can filter and focus on what matters most.
+                    </div>
+                    <div class="feature-item">
+                        <strong>Break Down Big Tasks:</strong> Use subtasks to make large projects more manageable.
+                    </div>
+                    <div class="feature-item">
+                        <strong>Archive, Don't Delete:</strong> Archive completed tasks instead of deleting them to maintain a history.
+                    </div>
+                    <div class="feature-item">
+                        <strong>Backup Strategy:</strong> Use auto-backup for convenience + manual backups for safety.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Troubleshooting -->
+            <div class="how-section">
+                <h2>🔧 Troubleshooting</h2>
+                
+                <h3>Tasks Disappeared After Clearing Browser Data</h3>
+                <p>Unfortunately, if you cleared your browser's cache/localStorage without a backup, the tasks are gone. This is why regular backups are important!</p>
+                <p><strong>Solution:</strong> Import your most recent backup file.</p>
+
+                <h3>Auto-Backup Button Doesn't Work</h3>
+                <p>This feature requires a Chromium-based browser (Chrome, Edge, Opera).</p>
+                <p><strong>Solution:</strong> Use manual backups if you're on Firefox or Safari.</p>
+
+                <h3>Can't See Archived Tasks</h3>
+                <p>Archived tasks are hidden by default.</p>
+                <p><strong>Solution:</strong> Click the "📦 Archived" filter button to view them.</p>
+
+                <h3>Lost Permission for Auto-Backup Folder</h3>
+                <p>Browsers may revoke folder permissions after a while.</p>
+                <p><strong>Solution:</strong> Click "🔄 Auto-Backup" again to re-grant permission.</p>
+            </div>
+
+            <!-- Security and Privacy -->
+            <div class="how-section">
+                <h2>🔒 Security and Privacy</h2>
+                
+                <ul>
+                    <li><strong>All data stays local:</strong> Nothing is uploaded to the internet or any server</li>
+                    <li><strong>No tracking:</strong> The app doesn't track, monitor, or send any data anywhere</li>
+                    <li><strong>Browser security:</strong> The app runs in your browser's secure sandbox</li>
+                    <li><strong>Auto-backup security:</strong> You explicitly grant permission to ONE folder only</li>
+                    <li><strong>You're in control:</strong> You can disable auto-backup, delete all tasks, or export data anytime</li>
+                </ul>
+
+                <div class="success-box">
+                    <strong>✅ Privacy First:</strong> Your tasks are yours alone. No accounts, no cloud sync, no data collection.
+                </div>
+            </div>
+        </main>
+
+        <!-- Navigation -->
+        <nav class="navigation">
+            <a href="task-list.html" class="nav-btn nav-btn-primary">
+                ← Back to Task List
+            </a>
+        </nav>
+    </div>
+</body>
+</html>
+
