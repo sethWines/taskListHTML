@@ -1597,6 +1597,49 @@
             color: var(--text-primary, #e0e0e0);
             border: 1px solid var(--border-color, #30363d);
         }
+        
+        /* UX Enhancement: Tag Badges */
+        .task-tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        
+        .tag-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            color: white;
+            cursor: default;
+            transition: all 0.2s;
+        }
+        
+        .tag-badge:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        .tag-remove-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+            font-size: 14px;
+            line-height: 1;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        
+        .tag-remove-btn:hover {
+            opacity: 1;
+        }
 
         .task-date {
             font-size: 12px;
@@ -1868,6 +1911,52 @@
         .stat-item {
             display: flex;
             flex-direction: column;
+        }
+        
+        /* UX Enhancement: Statistics Dashboard Styles */
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .stat-card .stat-value {
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .stat-card .stat-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        .stats-section {
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .stat-item-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            color: var(--text-secondary);
+        }
+        
+        .priority-stat {
+            text-align: center;
         }
 
         .stat-label {
@@ -2184,6 +2273,8 @@
                 <button class="task-btn task-btn-primary" id="backup-btn">Backup Tasks</button>
                 <button class="task-btn task-btn-primary" id="import-btn">Import Tasks</button>
                 <button class="task-btn task-btn-primary" id="auto-backup-btn" title="Enable automatic hourly backups to a single file (overwrites each time)">Auto-Backup</button>
+                <button class="task-btn task-btn-primary" id="enable-notifications-btn" title="Enable browser notifications for due tasks">🔔 Enable Reminders</button>
+                <button class="task-btn task-btn-secondary" id="view-stats-btn" title="View productivity statistics and insights">📊 Statistics</button>
                 <input type="file" id="import-file-input" accept=".json" style="display: none;">
             </div>
 
@@ -2243,6 +2334,20 @@
                         >
                         <button id="add-task-btn" class="task-btn task-btn-primary">Add Task</button>
                     </div>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <label style="color: var(--text-secondary); font-size: 14px;">🏷️ Tags:</label>
+                        <input 
+                            type="text" 
+                            id="task-tags" 
+                            class="task-input" 
+                            placeholder="Add tags separated by commas (e.g., urgent, meeting, client)"
+                            style="flex: 1; min-width: 200px;"
+                            list="tag-suggestions"
+                        >
+                        <datalist id="tag-suggestions">
+                            <!-- Will be populated dynamically with existing tags -->
+                        </datalist>
+                    </div>
                     <datalist id="category-suggestions">
                         <option value="Work">
                         <option value="Personal">
@@ -2261,7 +2366,7 @@
                             type="search" 
                             id="task-search" 
                             class="task-input" 
-                            placeholder="🔍 Search tasks (title, description, subtasks)..." 
+                            placeholder="🔍 Search tasks (title, description, subtasks, tags)..." 
                             style="width: 100%; padding-right: 80px;"
                         >
                         <button 
@@ -2300,15 +2405,7 @@
 
             <!-- Search and Sort Controls -->
             <div class="task-filters" style="margin-top: 12px;">
-                <label for="search-input" style="color: var(--text-primary, #e0e0e0); font-weight: 600; margin-right: 10px;">Search:</label>
-                <input 
-                    type="text" 
-                    id="search-input" 
-                    class="task-input" 
-                    placeholder="Search task titles..."
-                    style="flex: 1; max-width: 300px;"
-                >
-                <label for="sort-select" style="color: var(--text-primary, #e0e0e0); font-weight: 600; margin-left: 20px; margin-right: 10px;">Sort By:</label>
+                <label for="sort-select" style="color: var(--text-primary, #e0e0e0); font-weight: 600; margin-right: 10px;">Sort By:</label>
                 <select id="sort-select" class="task-select" style="flex: 1; max-width: 200px;">
                     <option value="custom">Custom Order (Drag to Reorder)</option>
                     <option value="due-date">Due Date (Soonest First)</option>
@@ -2363,6 +2460,24 @@
             </div>
         </div>
     </div>
+    
+    <!-- Statistics Modal (UX Enhancement) -->
+    <div id="stats-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>📊 Task Statistics & Insights</h2>
+                <button class="modal-close" id="close-stats-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="stats-content" style="display: flex; flex-direction: column; gap: 24px;">
+                    <!-- Will be populated dynamically -->
+                </div>
+                <div class="modal-actions">
+                    <button class="task-btn task-btn-secondary" id="close-stats-btn">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Task Manager Class
@@ -2392,6 +2507,9 @@
                 this.allSortedTasks = []; // Cache of sorted/filtered tasks
                 this.searchTerm = ''; // UX Enhancement: Search functionality
                 this.customOrder = JSON.parse(localStorage.getItem('customTaskOrder')) || []; // UX Enhancement: Drag & drop custom order
+                this.undoStack = []; // UX Enhancement: Undo functionality
+                this.redoStack = []; // UX Enhancement: Redo functionality
+                this.maxUndoSteps = 20; // Limit undo history
                 this.autoBackupInterval = null;
                 this.directoryHandle = null;
                 this.dbName = 'TaskManagerDB';
@@ -2419,22 +2537,18 @@
                         this.performAutoBackup();
                     }
                 });
-                // UX Enhancement: Check for due tasks and request notification permission
+                // UX Enhancement: Check for due tasks (but don't auto-request permission)
                 this.checkDueTasks();
                 // Check due tasks daily
                 setInterval(() => this.checkDueTasks(), 24 * 60 * 60 * 1000);
+                // UX Enhancement: Update tag suggestions from existing tasks
+                this.updateTagSuggestions();
             }
             
             // UX Enhancement: Browser notifications for due tasks
             async checkDueTasks() {
-                // Request notification permission if not already granted
-                if ('Notification' in window && Notification.permission === 'default') {
-                    try {
-                        await Notification.requestPermission();
-                    } catch (e) {
-                        console.log('Notification permission request failed:', e);
-                    }
-                }
+                // Only send notifications if permission already granted
+                // (Don't auto-request - user must enable via settings)
                 
                 // Find tasks due today or overdue
                 const dueTasks = this.tasks.filter(t => {
@@ -2444,7 +2558,7 @@
                     return status && ['today', 'overdue'].includes(status.status);
                 });
                 
-                // Send notification if there are due tasks
+                // Send notification if there are due tasks AND permission granted
                 if (dueTasks.length > 0 && 'Notification' in window && Notification.permission === 'granted') {
                     const overdueCount = dueTasks.filter(t => {
                         const status = this.getDueDateStatus(t.dueDate);
@@ -2472,6 +2586,351 @@
                     
                     console.log(`🔔 Sent notification for ${dueTasks.length} due task(s)`);
                 }
+            }
+            
+            // UX Enhancement: Request notification permission (must be triggered by user action)
+            async requestNotificationPermission() {
+                if ('Notification' in window && Notification.permission === 'default') {
+                    try {
+                        const permission = await Notification.requestPermission();
+                        if (permission === 'granted') {
+                            alert('✓ Notifications enabled! You\'ll receive daily reminders for due tasks.');
+                            this.checkDueTasks(); // Check immediately after granting
+                        } else {
+                            alert('Notifications disabled. You can enable them later in browser settings.');
+                        }
+                    } catch (e) {
+                        console.error('Notification permission request failed:', e);
+                    }
+                } else if (Notification.permission === 'granted') {
+                    alert('Notifications are already enabled!');
+                } else if (Notification.permission === 'denied') {
+                    alert('Notifications are blocked. Please enable them in your browser settings.');
+                }
+            }
+            
+            // UX Enhancement: Calculate comprehensive task statistics
+            calculateStats() {
+                const now = new Date();
+                const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+                const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+                
+                const allTasks = this.tasks.filter(t => !t.archived);
+                const completed = allTasks.filter(t => t.completed);
+                const active = allTasks.filter(t => !t.completed);
+                
+                const completedThisWeek = completed.filter(t => 
+                    t.completedAt && new Date(t.completedAt) >= weekAgo
+                ).length;
+                
+                const completedThisMonth = completed.filter(t =>
+                    t.completedAt && new Date(t.completedAt) >= monthAgo
+                ).length;
+                
+                // By category
+                const byCategory = {};
+                allTasks.forEach(task => {
+                    const cat = task.category || 'General';
+                    if (!byCategory[cat]) {
+                        byCategory[cat] = { total: 0, completed: 0, active: 0 };
+                    }
+                    byCategory[cat].total++;
+                    if (task.completed) byCategory[cat].completed++;
+                    else byCategory[cat].active++;
+                });
+                
+                // By priority
+                const byPriority = { high: 0, medium: 0, low: 0 };
+                active.forEach(task => {
+                    byPriority[task.priority] = (byPriority[task.priority] || 0) + 1;
+                });
+                
+                // Tags usage
+                const tagCounts = {};
+                allTasks.forEach(task => {
+                    if (task.tags) {
+                        task.tags.forEach(tag => {
+                            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                        });
+                    }
+                });
+                const topTags = Object.entries(tagCounts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10);
+                
+                // Due date analysis
+                const withDueDates = allTasks.filter(t => t.dueDate && !t.completed);
+                const overdue = withDueDates.filter(t => {
+                    const status = this.getDueDateStatus(t.dueDate);
+                    return status && status.status === 'overdue';
+                }).length;
+                
+                const dueToday = withDueDates.filter(t => {
+                    const status = this.getDueDateStatus(t.dueDate);
+                    return status && status.status === 'today';
+                }).length;
+                
+                const completionRate = allTasks.length > 0 
+                    ? ((completed.length / allTasks.length) * 100).toFixed(1)
+                    : 0;
+                
+                return {
+                    totalTasks: allTasks.length,
+                    completedTasks: completed.length,
+                    activeTasks: active.length,
+                    completionRate: completionRate,
+                    completedThisWeek,
+                    completedThisMonth,
+                    avgPerDay: (completedThisMonth / 30).toFixed(1),
+                    byCategory,
+                    byPriority,
+                    topTags,
+                    overdue,
+                    dueToday,
+                    withSubtasks: allTasks.filter(t => t.subtasks && t.subtasks.length > 0).length
+                };
+            }
+            
+            // UX Enhancement: Show statistics modal
+            showStatsModal() {
+                const stats = this.calculateStats();
+                const content = document.getElementById('stats-content');
+                
+                content.innerHTML = `
+                    <!-- Overview Stats -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: var(--accent-color);">${stats.totalTasks}</div>
+                            <div class="stat-label">Total Tasks</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: #4caf50;">${stats.completedTasks}</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: #ff9800;">${stats.activeTasks}</div>
+                            <div class="stat-label">Active</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: #2196f3;">${stats.completionRate}%</div>
+                            <div class="stat-label">Completion Rate</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Activity -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">📈 Recent Activity</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                            <div class="stat-item-row">
+                                <span>Completed this week:</span>
+                                <strong style="color: #4caf50;">${stats.completedThisWeek} tasks</strong>
+                            </div>
+                            <div class="stat-item-row">
+                                <span>Completed this month:</span>
+                                <strong style="color: #4caf50;">${stats.completedThisMonth} tasks</strong>
+                            </div>
+                            <div class="stat-item-row">
+                                <span>Average per day:</span>
+                                <strong style="color: #2196f3;">${stats.avgPerDay} tasks</strong>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Due Dates -->
+                    ${stats.overdue > 0 || stats.dueToday > 0 ? `
+                        <div class="stats-section" style="background: rgba(244, 67, 54, 0.1); padding: 16px; border-radius: 8px; border: 1px solid rgba(244, 67, 54, 0.3);">
+                            <h3 style="color: #f44336; margin-bottom: 12px;">⚠️ Attention Needed</h3>
+                            <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                                ${stats.overdue > 0 ? `<div><span>🔴 Overdue:</span> <strong style="color: #f44336;">${stats.overdue} tasks</strong></div>` : ''}
+                                ${stats.dueToday > 0 ? `<div><span>⏰ Due today:</span> <strong style="color: #ff9800;">${stats.dueToday} tasks</strong></div>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- By Category -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">📁 Tasks by Category</h3>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            ${Object.entries(stats.byCategory).map(([cat, data]) => `
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="min-width: 120px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(cat)}</div>
+                                    <div style="flex: 1; height: 24px; background: var(--bg-tertiary); border-radius: 12px; overflow: hidden; position: relative;">
+                                        <div style="height: 100%; background: linear-gradient(90deg, var(--accent-color) 0%, var(--primary-orange-dark) 100%); width: ${data.total > 0 ? (data.completed / data.total * 100) : 0}%; transition: width 0.3s;"></div>
+                                    </div>
+                                    <div style="min-width: 100px; text-align: right; font-size: 14px; color: var(--text-secondary);">
+                                        <span style="color: #4caf50;">${data.completed}</span> / ${data.total}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <!-- By Priority (Active tasks only) -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">🎯 Active Tasks by Priority</h3>
+                        <div style="display: flex; gap: 24px; justify-content: space-around;">
+                            <div class="priority-stat">
+                                <div style="font-size: 2em; color: #f44336;">🔴 ${stats.byPriority.high || 0}</div>
+                                <div style="color: var(--text-secondary);">High</div>
+                            </div>
+                            <div class="priority-stat">
+                                <div style="font-size: 2em; color: #ff9800;">🟡 ${stats.byPriority.medium || 0}</div>
+                                <div style="color: var(--text-secondary);">Medium</div>
+                            </div>
+                            <div class="priority-stat">
+                                <div style="font-size: 2em; color: #4caf50;">🟢 ${stats.byPriority.low || 0}</div>
+                                <div style="color: var(--text-secondary);">Low</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Top Tags -->
+                    ${stats.topTags.length > 0 ? `
+                        <div class="stats-section">
+                            <h3 style="color: var(--text-primary); margin-bottom: 12px;">🏷️ Most Used Tags</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                ${stats.topTags.map(([tag, count]) => `
+                                    <span class="tag-badge" style="background: ${this.getTagColor(tag)}; display: flex; align-items: center; gap: 6px;">
+                                        #${this.escapeHtml(tag)}
+                                        <span style="opacity: 0.8; font-size: 0.9em;">(${count})</span>
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- Additional Insights -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">💡 Insights</h3>
+                        <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
+                            <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                                📝 <strong>${stats.withSubtasks}</strong> tasks have subtasks/next steps
+                            </li>
+                            ${stats.completedThisWeek > 0 ? `
+                                <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                                    🎉 Great job! You completed <strong>${stats.completedThisWeek}</strong> tasks this week
+                                </li>
+                            ` : ''}
+                            ${stats.avgPerDay > 1 ? `
+                                <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                                    🔥 You're on fire! Averaging <strong>${stats.avgPerDay}</strong> tasks per day
+                                </li>
+                            ` : ''}
+                            ${stats.activeTasks === 0 && stats.totalTasks > 0 ? `
+                                <li style="padding: 8px; background: rgba(76, 175, 80, 0.2); border-radius: 6px; color: #4caf50;">
+                                    ✨ Amazing! All tasks completed!
+                                </li>
+                            ` : ''}
+                        </ul>
+                    </div>
+                `;
+                
+                document.getElementById('stats-modal').style.display = 'block';
+            }
+            
+            closeStatsModal() {
+                document.getElementById('stats-modal').style.display = 'none';
+            }
+            
+            // UX Enhancement: Undo/Redo System
+            saveStateForUndo(actionName = 'Action') {
+                // Clone current state
+                const state = {
+                    tasks: JSON.parse(JSON.stringify(this.tasks)),
+                    actionName: actionName,
+                    timestamp: Date.now()
+                };
+                
+                this.undoStack.push(state);
+                
+                // Limit stack size
+                if (this.undoStack.length > this.maxUndoSteps) {
+                    this.undoStack.shift();
+                }
+                
+                // Clear redo stack on new action
+                this.redoStack = [];
+                
+                console.log(`💾 Saved state for undo: ${actionName} (${this.undoStack.length} states)`);
+            }
+            
+            undo() {
+                if (this.undoStack.length === 0) {
+                    console.log('Nothing to undo');
+                    return;
+                }
+                
+                // Save current state to redo stack
+                const currentState = {
+                    tasks: JSON.parse(JSON.stringify(this.tasks)),
+                    actionName: 'Redo point',
+                    timestamp: Date.now()
+                };
+                this.redoStack.push(currentState);
+                
+                // Restore previous state
+                const previousState = this.undoStack.pop();
+                this.tasks = previousState.tasks;
+                
+                this.saveTasks();
+                this.render();
+                
+                this.showToast(`↶ Undid: ${previousState.actionName}`, 2000);
+                console.log(`↶ Undo: ${previousState.actionName}`);
+            }
+            
+            redo() {
+                if (this.redoStack.length === 0) {
+                    console.log('Nothing to redo');
+                    return;
+                }
+                
+                // Save current state to undo stack
+                const currentState = {
+                    tasks: JSON.parse(JSON.stringify(this.tasks)),
+                    actionName: 'Undo point',
+                    timestamp: Date.now()
+                };
+                this.undoStack.push(currentState);
+                
+                // Restore redo state
+                const redoState = this.redoStack.pop();
+                this.tasks = redoState.tasks;
+                
+                this.saveTasks();
+                this.render();
+                
+                this.showToast(`↷ Redid action`, 2000);
+                console.log(`↷ Redo action`);
+            }
+            
+            // UX Enhancement: Toast notification for undo/redo
+            showToast(message, duration = 2000) {
+                // Create toast element
+                const toast = document.createElement('div');
+                toast.textContent = message;
+                toast.style.cssText = `
+                    position: fixed;
+                    bottom: 24px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: var(--bg-card);
+                    color: var(--text-primary);
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    border: 2px solid var(--accent-color);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    z-index: 10000;
+                    font-weight: 600;
+                    animation: slideUp 0.3s ease;
+                `;
+                
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    toast.style.animation = 'slideDown 0.3s ease';
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
             }
 
             // Cross-Tab Synchronization
@@ -2733,6 +3192,21 @@
 
                 // Auto-backup toggle
                 document.getElementById('auto-backup-btn').addEventListener('click', () => this.toggleAutoBackup());
+                
+                // UX Enhancement: Enable notifications button
+                document.getElementById('enable-notifications-btn').addEventListener('click', () => this.requestNotificationPermission());
+                
+                // UX Enhancement: Statistics modal
+                document.getElementById('view-stats-btn').addEventListener('click', () => this.showStatsModal());
+                document.getElementById('close-stats-modal').addEventListener('click', () => this.closeStatsModal());
+                document.getElementById('close-stats-btn').addEventListener('click', () => this.closeStatsModal());
+                
+                // Close stats modal on outside click
+                document.getElementById('stats-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'stats-modal') {
+                        this.closeStatsModal();
+                    }
+                });
             }
 
             loadTasks() {
@@ -2814,11 +3288,17 @@
                 const priority = document.getElementById('task-priority').value;
                 const category = document.getElementById('task-category').value.trim();
                 const dueDate = document.getElementById('task-due-date').value; // UX Enhancement: Due dates
+                const tagsInput = document.getElementById('task-tags').value.trim(); // UX Enhancement: Tags
 
                 if (!title) {
                     alert('Please enter a task title');
                     return;
                 }
+                
+                // Parse tags (split by comma, trim, remove duplicates, convert to lowercase)
+                const tags = tagsInput 
+                    ? [...new Set(tagsInput.split(',').map(t => t.trim().toLowerCase()).filter(t => t))]
+                    : [];
 
                 const now = new Date().toISOString();
                 const task = {
@@ -2830,6 +3310,7 @@
                     priority,
                     category: category || 'General',
                     dueDate: dueDate || null, // UX Enhancement: Store due date
+                    tags: tags, // UX Enhancement: Store tags array
                     subtasks: [],
                     createdAt: now,
                     updatedAt: now
@@ -2837,6 +3318,7 @@
 
                 this.tasks.push(task);
                 this.saveTasks();
+                this.updateTagSuggestions(); // Update tag autocomplete
                 this.render();
 
                 // Clear form
@@ -2845,6 +3327,7 @@
                 document.getElementById('task-category').value = 'Work';
                 document.getElementById('task-priority').value = 'medium';
                 document.getElementById('task-due-date').value = ''; // UX Enhancement: Clear due date
+                document.getElementById('task-tags').value = ''; // UX Enhancement: Clear tags
             }
 
             toggleTask(id) {
@@ -3205,6 +3688,9 @@
                         // Search in subtasks
                         if (t.subtasks && t.subtasks.some(st => st.text.toLowerCase().includes(searchLower))) return true;
                         
+                        // Search in tags (UX Enhancement)
+                        if (t.tags && t.tags.some(tag => tag.toLowerCase().includes(searchLower))) return true;
+                        
                         return false;
                     });
                     
@@ -3313,6 +3799,16 @@
                             </h3>
                             ${!isCollapsed ? `
                                 ${task.content ? `<p class="task-description">${this.escapeHtml(task.content)}</p>` : ''}
+                                ${task.tags && task.tags.length > 0 ? `
+                                    <div class="task-tags">
+                                        ${task.tags.map(tag => `
+                                            <span class="tag-badge" style="background: ${this.getTagColor(tag)};">
+                                                #${this.escapeHtml(tag)}
+                                                <button class="tag-remove-btn" onclick="taskManager.removeTag(${task.id}, '${this.escapeHtml(tag)}')" title="Remove tag">×</button>
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
                                 <div class="task-meta">
                                     <span class="task-priority ${task.priority}">${task.priority.toUpperCase()}</span>
                                     <span class="task-category">${this.escapeHtml(task.category)}</span>
@@ -3971,6 +4467,53 @@
                     icon: '📅', 
                     text: `Due in ${diffDays} days`
                 };
+            }
+            
+            // UX Enhancement: Get all unique tags across all tasks
+            getAllTags() {
+                const tagSet = new Set();
+                this.tasks.forEach(task => {
+                    if (task.tags && Array.isArray(task.tags)) {
+                        task.tags.forEach(tag => tagSet.add(tag));
+                    }
+                });
+                return Array.from(tagSet).sort();
+            }
+            
+            // UX Enhancement: Update tag autocomplete suggestions
+            updateTagSuggestions() {
+                const allTags = this.getAllTags();
+                const datalist = document.getElementById('tag-suggestions');
+                if (datalist) {
+                    datalist.innerHTML = allTags.map(tag => `<option value="${tag}">`).join('');
+                }
+            }
+            
+            // UX Enhancement: Generate color for tag (consistent hashing)
+            getTagColor(tag) {
+                // Simple hash function to generate consistent color per tag
+                let hash = 0;
+                for (let i = 0; i < tag.length; i++) {
+                    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                
+                // Generate HSL color with good saturation and lightness
+                const hue = Math.abs(hash % 360);
+                const saturation = 65 + (Math.abs(hash) % 20); // 65-85%
+                const lightness = 45 + (Math.abs(hash >> 8) % 15); // 45-60%
+                
+                return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+            }
+            
+            // UX Enhancement: Remove tag from task
+            removeTag(taskId, tag) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (task && task.tags) {
+                    task.tags = task.tags.filter(t => t !== tag);
+                    task.updatedAt = new Date().toISOString();
+                    this.saveTasks();
+                    this.render();
+                }
             }
             
             // UX Enhancement: Drag & Drop Implementation
