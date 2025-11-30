@@ -832,6 +832,64 @@
             align-items: flex-start;
             transition: all 0.2s;
             box-sizing: border-box;
+            cursor: default;
+        }
+        
+        /* UX Enhancement: Drag & Drop Styles */
+        .task-item.draggable {
+            cursor: grab;
+        }
+        
+        .task-item.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+            transform: scale(0.98);
+            border-color: var(--accent-color, #ffa834);
+        }
+        
+        .task-item.drag-over-top {
+            border-top: 3px solid var(--accent-color, #ffa834);
+            margin-top: 8px;
+        }
+        
+        .task-item.drag-over-bottom {
+            border-bottom: 3px solid var(--accent-color, #ffa834);
+            margin-bottom: 16px;
+        }
+        
+        .drag-handle {
+            color: var(--text-secondary, #6b7280);
+            font-size: 20px;
+            cursor: grab;
+            user-select: none;
+            display: none; /* Hidden by default, shown in custom sort mode */
+            padding: 8px 4px;
+            opacity: 0.6;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        
+        .custom-sort-mode .drag-handle {
+            display: block;
+        }
+        
+        .drag-handle:hover {
+            opacity: 1;
+            color: var(--accent-color, #ffa834);
+            transform: scale(1.1);
+        }
+        
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+        
+        .drag-handle[draggable="true"] {
+            cursor: grab;
+        }
+        
+        .drag-handle[draggable="true"]:active {
+            cursor: grabbing;
         }
 
         .task-collapse-btn {
@@ -2188,6 +2246,30 @@
                 </div>
             </div>
 
+            <!-- Search Bar -->
+            <div class="search-bar" style="margin-bottom: 16px;">
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <div style="flex: 1; position: relative;">
+                        <input 
+                            type="search" 
+                            id="task-search" 
+                            class="task-input" 
+                            placeholder="🔍 Search tasks (title, description, subtasks)..." 
+                            style="width: 100%; padding-right: 80px;"
+                        >
+                        <button 
+                            id="clear-search-btn" 
+                            class="task-btn task-btn-secondary" 
+                            style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 6px 12px; display: none;"
+                            title="Clear search"
+                        >
+                            ✕ Clear
+                        </button>
+                    </div>
+                    <div id="search-result-count" style="color: var(--text-secondary); font-size: 14px; white-space: nowrap; min-width: 100px;"></div>
+                </div>
+            </div>
+
             <!-- Task Filters -->
             <div class="task-filters">
                 <label for="filter-select" style="color: var(--text-primary, #e0e0e0); font-weight: 600; margin-right: 10px;">Filter:</label>
@@ -2221,6 +2303,7 @@
                 >
                 <label for="sort-select" style="color: var(--text-primary, #e0e0e0); font-weight: 600; margin-left: 20px; margin-right: 10px;">Sort By:</label>
                 <select id="sort-select" class="task-select" style="flex: 1; max-width: 200px;">
+                    <option value="custom">Custom Order (Drag to Reorder)</option>
                     <option value="priority" selected>Priority (High to Low)</option>
                     <option value="priority-reverse">Priority (Low to High)</option>
                     <option value="title-asc">Title (A to Z)</option>
@@ -2299,6 +2382,8 @@
                 this.totalPages = 0;
                 this.visibleTasks = [];
                 this.allSortedTasks = []; // Cache of sorted/filtered tasks
+                this.searchTerm = ''; // UX Enhancement: Search functionality
+                this.customOrder = JSON.parse(localStorage.getItem('customTaskOrder')) || []; // UX Enhancement: Drag & drop custom order
                 this.autoBackupInterval = null;
                 this.directoryHandle = null;
                 this.dbName = 'TaskManagerDB';
@@ -2519,16 +2604,45 @@
                     this.render();
                 });
 
-                // Search
-                document.getElementById('search-input').addEventListener('input', (e) => {
-                    this.searchTerm = e.target.value;
-                    this.resetVirtualScroll(); // Reset pagination when search changes
+                // Search with debounce (UX Enhancement)
+                let searchTimeout;
+                document.getElementById('task-search').addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    const value = e.target.value;
+                    
+                    // Show/hide clear button
+                    const clearBtn = document.getElementById('clear-search-btn');
+                    clearBtn.style.display = value ? 'block' : 'none';
+                    
+                    // Debounce search (200ms)
+                    searchTimeout = setTimeout(() => {
+                        this.searchTerm = value;
+                        this.resetVirtualScroll();
+                        this.render();
+                    }, 200);
+                });
+                
+                // Clear search button
+                document.getElementById('clear-search-btn').addEventListener('click', () => {
+                    document.getElementById('task-search').value = '';
+                    document.getElementById('clear-search-btn').style.display = 'none';
+                    this.searchTerm = '';
+                    this.resetVirtualScroll();
                     this.render();
                 });
 
-                // Sort
+                // Sort (UX Enhancement: Enable drag mode for custom sort)
                 document.getElementById('sort-select').addEventListener('change', (e) => {
                     this.sortMethod = e.target.value;
+                    
+                    // Toggle custom sort mode (enable/disable drag & drop)
+                    const taskList = document.getElementById('task-list');
+                    if (this.sortMethod === 'custom') {
+                        taskList.classList.add('custom-sort-mode');
+                    } else {
+                        taskList.classList.remove('custom-sort-mode');
+                    }
+                    
                     this.resetVirtualScroll(); // Reset pagination when sort changes
                     this.render();
                 });
@@ -3014,15 +3128,44 @@
                         filtered = this.tasks.filter(t => !t.archived);
                 }
                 
-                // Apply search filter if search term is present
+                // Apply search filter if search term is present (UX Enhancement: Search title, description, subtasks)
                 if (this.searchTerm.trim()) {
                     const searchLower = this.searchTerm.toLowerCase();
-                    filtered = filtered.filter(t => 
-                        t.title.toLowerCase().includes(searchLower)
-                    );
+                    filtered = filtered.filter(t => {
+                        // Search in title
+                        if (t.title.toLowerCase().includes(searchLower)) return true;
+                        
+                        // Search in description/content
+                        if (t.content && t.content.toLowerCase().includes(searchLower)) return true;
+                        
+                        // Search in subtasks
+                        if (t.subtasks && t.subtasks.some(st => st.text.toLowerCase().includes(searchLower))) return true;
+                        
+                        return false;
+                    });
+                    
+                    // Update search result count
+                    this.updateSearchResultCount(filtered.length);
+                } else {
+                    // Clear result count when no search
+                    this.updateSearchResultCount(null);
                 }
                 
                 return filtered;
+            }
+            
+            // UX Enhancement: Show search result count
+            updateSearchResultCount(count) {
+                const countEl = document.getElementById('search-result-count');
+                if (count === null) {
+                    countEl.textContent = '';
+                } else {
+                    countEl.textContent = count === 0 
+                        ? '❌ No matches found'
+                        : count === 1
+                        ? '✓ Found 1 task'
+                        : `✓ Found ${count} tasks`;
+                }
             }
 
             clearCompleted() {
@@ -3087,7 +3230,8 @@
                 }
 
                 return `
-                    <li class="task-item ${task.completed ? 'completed' : ''} ${task.archived ? 'archived' : ''} ${isCollapsed ? 'collapsed' : ''}">
+                    <li class="task-item ${task.completed ? 'completed' : ''} ${task.archived ? 'archived' : ''} ${isCollapsed ? 'collapsed' : ''} draggable" data-task-id="${task.id}">
+                        <span class="drag-handle" draggable="true" title="Drag to reorder">⋮⋮</span>
                         <button class="task-collapse-btn" onclick="taskManager.toggleCollapse(${task.id})" title="${isCollapsed ? 'Expand' : 'Collapse'} task">
                             ${isCollapsed ? '▶' : '▼'}
                         </button>
@@ -3260,6 +3404,11 @@
                 } else {
                     // For small lists, render all (no overhead)
                     taskList.innerHTML = sortedTasks.map(task => this.renderTask(task)).join('');
+                }
+                
+                // UX Enhancement: Setup drag & drop for custom sort mode
+                if (this.sortMethod === 'custom') {
+                    this.setupDragAndDrop();
                 }
             }
             
@@ -3603,6 +3752,9 @@
                 const tasksCopy = [...tasks];
                 
                 switch (this.sortMethod) {
+                    case 'custom':
+                        // UX Enhancement: Custom order (drag & drop)
+                        return this.sortByCustomOrder(tasksCopy);
                     case 'priority':
                         // Priority: high to low
                         return this.sortByPriority(tasksCopy, false);
@@ -3624,6 +3776,27 @@
                     default:
                         return tasksCopy;
                 }
+            }
+            
+            // UX Enhancement: Custom order sorting based on drag & drop
+            sortByCustomOrder(tasks) {
+                if (this.customOrder.length === 0) {
+                    // No custom order set, return as-is
+                    return tasks;
+                }
+                
+                // Sort tasks according to customOrder array (by task ID)
+                return tasks.sort((a, b) => {
+                    const aIndex = this.customOrder.indexOf(a.id);
+                    const bIndex = this.customOrder.indexOf(b.id);
+                    
+                    // If task not in custom order, put at end
+                    if (aIndex === -1 && bIndex === -1) return 0;
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    
+                    return aIndex - bIndex;
+                });
             }
 
             sortByPriority(tasks, reverse = false) {
@@ -3664,6 +3837,137 @@
                     if (dateA && !dateB) return -1;
                     return 0;
                 });
+            }
+            
+            // UX Enhancement: Drag & Drop Implementation
+            setupDragAndDrop() {
+                const dragHandles = document.querySelectorAll('.drag-handle[draggable="true"]');
+                let draggedElement = null;
+                let draggedTaskId = null;
+                
+                dragHandles.forEach(handle => {
+                    const taskItem = handle.closest('.task-item');
+                    if (!taskItem) return;
+                    
+                    const taskId = parseInt(taskItem.dataset.taskId);
+                    
+                    // Drag start - only from handle
+                    handle.addEventListener('dragstart', (e) => {
+                        draggedElement = taskItem;
+                        draggedTaskId = taskId;
+                        taskItem.classList.add('dragging');
+                        e.dataTransfer.effectAllowed = 'move';
+                        
+                        // Create a better drag image (the task item itself)
+                        e.dataTransfer.setDragImage(taskItem, 20, 20);
+                    });
+                    
+                    // Drag end
+                    handle.addEventListener('dragend', (e) => {
+                        taskItem.classList.remove('dragging');
+                        // Remove all drag-over classes
+                        document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+                            el.classList.remove('drag-over-top', 'drag-over-bottom');
+                        });
+                    });
+                });
+                
+                // Setup drop zones on all task items
+                const taskItems = document.querySelectorAll('.task-item.draggable');
+                taskItems.forEach(item => {
+                    // Drag over
+                    item.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        if (item === draggedElement) return;
+                        
+                        e.dataTransfer.dropEffect = 'move';
+                        
+                        // Determine if we should insert above or below
+                        const rect = item.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        const insertBefore = e.clientY < midpoint;
+                        
+                        // Remove existing drag-over classes from all items
+                        document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+                            el.classList.remove('drag-over-top', 'drag-over-bottom');
+                        });
+                        
+                        // Add appropriate class to this item
+                        if (insertBefore) {
+                            item.classList.add('drag-over-top');
+                        } else {
+                            item.classList.add('drag-over-bottom');
+                        }
+                    });
+                    
+                    // Drag leave
+                    item.addEventListener('dragleave', (e) => {
+                        // Only remove if actually leaving (not entering child)
+                        if (!item.contains(e.relatedTarget)) {
+                            item.classList.remove('drag-over-top', 'drag-over-bottom');
+                        }
+                    });
+                    
+                    // Drop
+                    item.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        if (item === draggedElement || !draggedTaskId) return;
+                        
+                        const targetTaskId = parseInt(item.dataset.taskId);
+                        
+                        // Determine insertion point
+                        const rect = item.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        const insertBefore = e.clientY < midpoint;
+                        
+                        // Reorder tasks
+                        this.reorderTask(draggedTaskId, targetTaskId, insertBefore);
+                        
+                        // Clean up
+                        item.classList.remove('drag-over-top', 'drag-over-bottom');
+                        draggedElement = null;
+                        draggedTaskId = null;
+                    });
+                });
+            }
+            
+            // UX Enhancement: Reorder task in custom order array
+            reorderTask(sourceTaskId, targetTaskId, insertBefore) {
+                // Update customOrder array
+                const filteredTasks = this.filterTasks();
+                const sortedTasks = this.sortTasks(filteredTasks);
+                
+                // Build new custom order from currently displayed tasks
+                const newOrder = sortedTasks.map(t => t.id);
+                
+                // Find indices
+                const sourceIdx = newOrder.indexOf(sourceTaskId);
+                const targetIdx = newOrder.indexOf(targetTaskId);
+                
+                if (sourceIdx === -1 || targetIdx === -1) return;
+                
+                // Remove source from array
+                newOrder.splice(sourceIdx, 1);
+                
+                // Calculate new insertion index
+                let insertIdx = newOrder.indexOf(targetTaskId);
+                if (!insertBefore) {
+                    insertIdx++;
+                }
+                
+                // Insert at new position
+                newOrder.splice(insertIdx, 0, sourceTaskId);
+                
+                // Update custom order
+                this.customOrder = newOrder;
+                localStorage.setItem('customTaskOrder', JSON.stringify(this.customOrder));
+                
+                console.log(`✨ Task ${sourceTaskId} moved ${insertBefore ? 'before' : 'after'} ${targetTaskId}`);
+                
+                // Re-render
+                this.render();
             }
 
             // Legacy method for backward compatibility
