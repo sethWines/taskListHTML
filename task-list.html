@@ -2942,17 +2942,34 @@
                     if (e.key === 'tasks' && e.newValue !== null) {
                         console.log('🔄 Detected task changes from another tab, syncing...');
                         
-                        // Parse the new data
-                        const newTasks = JSON.parse(e.newValue);
-                        
-                        // Update our tasks array
-                        this.tasks = newTasks;
-                        
-                        // Re-render the UI to show the updated tasks
-                        this.render();
-                        
-                        // Show a subtle notification to the user
-                        this.showSyncNotification();
+                        try {
+                            // Check if the data is compressed
+                            const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
+                            let newTasks;
+                            
+                            if (isCompressed) {
+                                // Decompress the data first
+                                const decompressed = LZString.decompressFromUTF16(e.newValue);
+                                newTasks = JSON.parse(decompressed);
+                            } else {
+                                // Parse uncompressed data
+                                newTasks = JSON.parse(e.newValue);
+                            }
+                            
+                            // Update our tasks array
+                            this.tasks = newTasks;
+                            
+                            // Re-render the UI to show the updated tasks
+                            this.render();
+                            
+                            // Show a subtle notification to the user
+                            this.showSyncNotification();
+                        } catch (error) {
+                            console.error('Failed to sync tasks from another tab:', error);
+                            // Reload from storage using the proper loadTasks method
+                            this.tasks = this.loadTasks();
+                            this.render();
+                        }
                     }
                 });
                 
@@ -2961,13 +2978,37 @@
                     if (!document.hidden) {
                         // Tab became visible, check for updates
                         const currentStored = localStorage.getItem('tasks');
-                        const currentTasks = JSON.stringify(this.tasks);
                         
-                        // Only reload if data has changed
-                        if (currentStored && currentStored !== currentTasks) {
-                            console.log('🔄 Tab became visible, checking for updates...');
-                            this.tasks = JSON.parse(currentStored);
-                            this.render();
+                        // Only reload if data exists and might have changed
+                        if (currentStored) {
+                            try {
+                                const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
+                                let loadedTasks;
+                                
+                                if (isCompressed) {
+                                    // Decompress the data first
+                                    const decompressed = LZString.decompressFromUTF16(currentStored);
+                                    loadedTasks = JSON.parse(decompressed);
+                                } else {
+                                    // Uncompressed data
+                                    loadedTasks = JSON.parse(currentStored);
+                                }
+                                
+                                // Compare task counts or IDs to detect changes
+                                const currentTaskIds = this.tasks.map(t => t.id).sort().join(',');
+                                const loadedTaskIds = loadedTasks.map(t => t.id).sort().join(',');
+                                
+                                if (currentTaskIds !== loadedTaskIds || this.tasks.length !== loadedTasks.length) {
+                                    console.log('🔄 Tab became visible, reloading updated tasks...');
+                                    this.tasks = loadedTasks;
+                                    this.render();
+                                }
+                            } catch (e) {
+                                console.error('Failed to check for updates:', e);
+                                // If parsing fails, reload from scratch
+                                this.tasks = this.loadTasks();
+                                this.render();
+                            }
                         }
                     }
                 });
@@ -5174,21 +5215,34 @@
                 // Set up listener for changes from editor
                 const messageHandler = (event) => {
                     if (event.data.type === 'taskUpdate' && event.data.taskId === id) {
+                        console.log('Received task update:', event.data);
                         const updatedTask = event.data.task;
                         const taskIndex = this.tasks.findIndex(t => t.id === id);
                         if (taskIndex !== -1) {
+                            console.log('Before update:', JSON.parse(JSON.stringify(this.tasks[taskIndex])));
                             this.tasks[taskIndex] = {
                                 ...this.tasks[taskIndex],
                                 ...updatedTask,
                                 updatedAt: new Date().toISOString()
                             };
+                            console.log('After update:', JSON.parse(JSON.stringify(this.tasks[taskIndex])));
                             this.saveTasks();
                             this.render();
                         }
+                        // Remove the event listener after processing the update
+                        window.removeEventListener('message', messageHandler);
                     }
                 };
 
                 window.addEventListener('message', messageHandler);
+                
+                // Also remove listener when editor window is closed
+                const checkWindowClosed = setInterval(() => {
+                    if (editorWindow.closed) {
+                        window.removeEventListener('message', messageHandler);
+                        clearInterval(checkWindowClosed);
+                    }
+                }, 500);
             }
 
             generateEditorHTML(task) {
@@ -5941,6 +5995,8 @@
 
             // Filter out empty subtasks
             taskData.subtasks = taskData.subtasks.filter(s => s.text);
+            
+            console.log('Saving task with subtasks:', taskData.subtasks);
 
             // Create updated task object
             const updatedTask = {
@@ -5950,6 +6006,8 @@
                 category: category,
                 subtasks: taskData.subtasks
             };
+            
+            console.log('Updated task object:', updatedTask);
 
             // Send message to parent window
             if (window.opener && !window.opener.closed) {
