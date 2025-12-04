@@ -3,3 +3,4 @@ PORTABILITY-VERIFICATION.md
 *.tmp
 rec*
 /archive/*
+/local_storage/*
