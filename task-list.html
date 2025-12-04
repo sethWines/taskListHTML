@@ -2285,6 +2285,7 @@
                 <button class="task-btn task-btn-primary" id="import-btn">Import Tasks</button>
                 <button class="task-btn task-btn-primary" id="auto-backup-btn" title="Enable automatic hourly backups to a single file (overwrites each time)">Auto-Backup</button>
                 <button class="task-btn task-btn-secondary" id="storage-settings-btn" title="Change storage location">⚙️ Storage Settings</button>
+                <button class="task-btn task-btn-secondary" id="migrate-archives-btn" title="Migrate old archived tasks to monthly archive files">📦 Migrate Archives</button>
                 <button class="task-btn task-btn-primary" id="enable-notifications-btn" title="Enable browser notifications for due tasks">🔔 Enable Reminders</button>
                 <button class="task-btn task-btn-secondary" id="view-stats-btn" title="View productivity statistics and insights">📊 Statistics</button>
                 <input type="file" id="import-file-input" accept=".json" style="display: none;">
@@ -2661,6 +2662,8 @@
                 this.taskFileHandle = null;
                 this.taskDirectoryHandle = null;
                 this.fileStorageReady = false;
+                this.loadedArchives = []; // Cache for loaded archived tasks
+                this.archivesLoaded = false;
                 
                 this.loadTheme();
                 this.init();
@@ -2674,7 +2677,7 @@
                 if (this.useFileStorage) {
                     const restored = await this.restoreFileStorageHandle();
                     if (restored) {
-                        // Load tasks from file
+                        // Load tasks from file (includes auto-migration)
                         const fileTasks = await this.loadFromFile();
                         if (fileTasks.length > 0) {
                             this.tasks = fileTasks;
@@ -2690,6 +2693,9 @@
                         this.useFileStorage = false;
                         localStorage.setItem('useFileStorage', 'false');
                     }
+                } else {
+                    // Using localStorage - auto-migrate any archived tasks
+                    await this.autoMigrateArchivedTasks();
                 }
                 
                 // Update indicators
@@ -2703,7 +2709,7 @@
                     setTimeout(() => this.showFileStorageSetupWizard(), 1000);
                 }
                 
-                this.render();
+                await this.render();
                 // Restore directory handle from IndexedDB if auto-backup is enabled
                 if (this.autoBackupEnabled) {
                     await this.restoreDirectoryHandle();
@@ -3466,6 +3472,9 @@
                 document.getElementById('close-storage-settings').addEventListener('click', () => this.closeStorageSettings());
                 document.getElementById('switch-to-file-btn').addEventListener('click', () => this.switchToFileStorage());
                 document.getElementById('switch-to-browser-btn').addEventListener('click', () => this.switchToBrowserStorage());
+                
+                // Archive migration utility
+                document.getElementById('migrate-archives-btn').addEventListener('click', () => this.migrateExistingArchivedTasks());
                 document.getElementById('change-file-location-btn').addEventListener('click', () => this.changeFileLocation());
                 document.getElementById('clear-file-storage-btn').addEventListener('click', () => this.clearFileStorage());
                 document.getElementById('storage-settings-modal').addEventListener('click', (e) => {
@@ -3476,39 +3485,63 @@
             }
 
             loadTasks() {
-                // NOTE: This is now a sync wrapper. File loading happens in init() before this
-                // If file storage is enabled, tasks will already be loaded
+                // NOTE: This is a sync method for constructor. Migration happens in init()
                 try {
                     const stored = localStorage.getItem('tasks');
                     if (!stored) return [];
                     
                     const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
                     
-                    let tasks;
+                    let allTasks;
                     if (isCompressed) {
                         // Decompress using LZ-String
                         const decompressed = LZString.decompressFromUTF16(stored);
-                        tasks = JSON.parse(decompressed);
-                        console.log(`📦 Loaded ${tasks.length} tasks (decompressed from localStorage)`);
+                        allTasks = JSON.parse(decompressed);
+                        console.log(`📦 Loaded ${allTasks.length} tasks (decompressed from localStorage)`);
                     } else {
                         // Legacy uncompressed data
-                        tasks = JSON.parse(stored);
-                        console.log(`📦 Loaded ${tasks.length} tasks (uncompressed - will compress on next save)`);
+                        allTasks = JSON.parse(stored);
+                        console.log(`📦 Loaded ${allTasks.length} tasks (uncompressed - will compress on next save)`);
                     }
                     
+                    // For initial load, just return all tasks (including archived)
+                    // Migration will happen in init()
+                    
                     // Initialize all tasks as collapsed by default
-                    tasks.forEach(task => {
+                    allTasks.forEach(task => {
                         if (!(task.id in this.collapsedTasks)) {
                             this.collapsedTasks[task.id] = true;
                         }
                     });
                     
-                    return tasks;
+                    return allTasks;
                 } catch (e) {
                     console.error('Failed to load tasks:', e);
                     console.log('🔄 Attempting recovery from backup or returning empty array...');
                     return [];
                 }
+            }
+            
+            async autoMigrateArchivedTasks() {
+                // Auto-migrate archived tasks found in main task list
+                const archivedTasks = this.tasks.filter(t => t.archived && t.archivedAt);
+                
+                if (archivedTasks.length === 0) {
+                    return;
+                }
+                
+                console.log(`🔄 Auto-migrating ${archivedTasks.length} archived tasks to monthly archive files...`);
+                
+                for (const task of archivedTasks) {
+                    await this.moveTaskToArchive(task);
+                    // Remove from main tasks array
+                    this.tasks = this.tasks.filter(t => t.id !== task.id);
+                }
+                
+                console.log(`✅ Auto-migrated ${archivedTasks.length} archived tasks successfully`);
+                
+                // Save the cleaned task list
+                this.saveTasks(true); // immediate save
             }
 
             // Performance Optimization: Debounced Writes (file or localStorage)
@@ -3548,7 +3581,10 @@
             // Uses LZ-String for 3-5x better compression
             saveToLocalStorage() {
                 try {
-                    const json = JSON.stringify(this.tasks);
+                    // Filter out archived tasks - they go to separate archive files
+                    const nonArchivedTasks = this.tasks.filter(t => !t.archived);
+                    
+                    const json = JSON.stringify(nonArchivedTasks);
                     const compressed = LZString.compressToUTF16(json);
                     
                     localStorage.setItem('tasks', compressed);
@@ -3556,11 +3592,12 @@
                     
                     // Log compression ratio for performance tracking
                     const ratio = ((compressed.length / json.length) * 100).toFixed(1);
-                    console.log(`💾 Saved ${this.tasks.length} tasks (compressed to ${ratio}% of original size)`);
+                    console.log(`💾 Saved ${nonArchivedTasks.length} tasks (compressed to ${ratio}% of original size)`);
                 } catch (e) {
                     console.error('Compression failed, saving uncompressed:', e);
                     // Fallback to uncompressed if compression fails
-                    localStorage.setItem('tasks', JSON.stringify(this.tasks));
+                    const nonArchivedTasks = this.tasks.filter(t => !t.archived);
+                    localStorage.setItem('tasks', JSON.stringify(nonArchivedTasks));
                     localStorage.setItem('tasksCompressed', 'false');
                 }
             }
@@ -3584,11 +3621,14 @@
                         return;
                     }
                     
+                    // Filter out archived tasks - they go to separate archive files
+                    const nonArchivedTasks = this.tasks.filter(t => !t.archived);
+                    
                     // Prepare data
                     const data = {
                         version: '1.0',
                         timestamp: new Date().toISOString(),
-                        tasks: this.tasks
+                        tasks: nonArchivedTasks
                     };
                     
                     // Write to file
@@ -3596,12 +3636,12 @@
                     await writable.write(JSON.stringify(data, null, 2));
                     await writable.close();
                     
-                    console.log(`📄 Saved ${this.tasks.length} tasks to file`);
+                    console.log(`📄 Saved ${nonArchivedTasks.length} tasks to file`);
                     this.updateFileStorageIndicator(true);
                     
                     // Also save minimal data to localStorage as backup (just metadata)
                     localStorage.setItem('lastFileSaveTime', new Date().toISOString());
-                    localStorage.setItem('taskCount', this.tasks.length.toString());
+                    localStorage.setItem('taskCount', nonArchivedTasks.length.toString());
                     
                 } catch (e) {
                     console.error('Failed to save to file:', e);
@@ -3622,9 +3662,28 @@
                     const text = await file.text();
                     const data = JSON.parse(text);
                     
-                    console.log(`📄 Loaded ${data.tasks.length} tasks from file (saved: ${new Date(data.timestamp).toLocaleString()})`);
+                    // Separate archived and non-archived tasks
+                    const allTasks = data.tasks || [];
+                    const archivedTasks = allTasks.filter(t => t.archived && t.archivedAt);
+                    const nonArchivedTasks = allTasks.filter(t => !t.archived);
+                    
+                    console.log(`📄 Loaded ${nonArchivedTasks.length} tasks from file (saved: ${new Date(data.timestamp).toLocaleString()})`);
+                    
+                    // Auto-migrate archived tasks if found
+                    if (archivedTasks.length > 0) {
+                        console.log(`🔄 Found ${archivedTasks.length} archived tasks in main file - auto-migrating...`);
+                        for (const task of archivedTasks) {
+                            await this.moveTaskToArchive(task);
+                        }
+                        console.log(`✅ Auto-migrated ${archivedTasks.length} archived tasks to monthly archive files`);
+                        
+                        // Save the cleaned task list (without archived tasks)
+                        this.tasks = nonArchivedTasks;
+                        await this.saveToFile();
+                    }
+                    
                     this.updateFileStorageIndicator(true);
-                    return data.tasks || [];
+                    return nonArchivedTasks;
                     
                 } catch (e) {
                     console.error('Failed to load from file:', e);
@@ -3672,8 +3731,18 @@
                             try {
                                 const data = JSON.parse(text);
                                 if (data.tasks && data.tasks.length > 0) {
-                                    existingTasks = data.tasks;
-                                    const confirmed = confirm(`Found existing tasks.json with ${data.tasks.length} tasks!\n\nDo you want to load these tasks?\n\nYes = Load tasks from file\nNo = Keep current tasks and overwrite file`);
+                                    // Filter out archived tasks
+                                    existingTasks = data.tasks.filter(t => !t.archived);
+                                    const totalTasks = data.tasks.length;
+                                    const archivedCount = totalTasks - existingTasks.length;
+                                    
+                                    let message = `Found existing tasks.json with ${existingTasks.length} tasks!`;
+                                    if (archivedCount > 0) {
+                                        message += `\n(${archivedCount} archived tasks will remain in archive files)`;
+                                    }
+                                    message += '\n\nDo you want to load these tasks?\n\nYes = Load tasks from file\nNo = Keep current tasks and overwrite file';
+                                    
+                                    const confirmed = confirm(message);
                                     if (confirmed) {
                                         this.tasks = existingTasks;
                                         console.log(`✅ Loaded ${this.tasks.length} tasks from existing file`);
@@ -3853,6 +3922,257 @@
                     console.error('Failed to remove file handle:', e);
                 }
             }
+            
+            // ==================== MONTHLY ARCHIVE FILE SYSTEM ====================
+            
+            getArchiveFileName(date) {
+                // Returns filename like "archive-2025-12.json" for December 2025
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                return `archive-${year}-${month}.json`;
+            }
+            
+            async moveTaskToArchive(task) {
+                // Support both file storage and localStorage-based archive storage
+                if (this.taskDirectoryHandle) {
+                    // File storage mode - write to file
+                    try {
+                        const archiveFileName = this.getArchiveFileName(task.archivedAt);
+                        console.log(`📦 Archiving task to ${archiveFileName}`);
+                        
+                        // Get or create the archive file for this month
+                        let archiveFileHandle;
+                        let existingArchives = [];
+                        
+                        try {
+                            archiveFileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                            // File exists, read it
+                            const file = await archiveFileHandle.getFile();
+                            const text = await file.text();
+                            if (text.trim()) {
+                                const data = JSON.parse(text);
+                                existingArchives = data.tasks || [];
+                            }
+                        } catch (e) {
+                            // File doesn't exist, will create it
+                            archiveFileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: true });
+                        }
+                        
+                        // Add task to archives
+                        existingArchives.push(task);
+                        
+                        // Write back to file
+                        const archiveData = {
+                            version: '1.0',
+                            month: archiveFileName.replace('archive-', '').replace('.json', ''),
+                            timestamp: new Date().toISOString(),
+                            tasks: existingArchives
+                        };
+                        
+                        const writable = await archiveFileHandle.createWritable();
+                        await writable.write(JSON.stringify(archiveData, null, 2));
+                        await writable.close();
+                        
+                        console.log(`✅ Task archived to ${archiveFileName} (${existingArchives.length} tasks in file)`);
+                        
+                    } catch (e) {
+                        console.error('Failed to move task to archive file:', e);
+                        // Fallback to localStorage archive
+                        this.moveTaskToLocalStorageArchive(task);
+                    }
+                } else {
+                    // localStorage mode - use localStorage for archives
+                    this.moveTaskToLocalStorageArchive(task);
+                }
+            }
+            
+            moveTaskToLocalStorageArchive(task) {
+                try {
+                    const archiveFileName = this.getArchiveFileName(task.archivedAt);
+                    console.log(`📦 Archiving task to localStorage: ${archiveFileName}`);
+                    
+                    // Get existing archives for this month
+                    let existingArchives = [];
+                    const storageKey = `archive_${archiveFileName}`;
+                    const stored = localStorage.getItem(storageKey);
+                    
+                    if (stored) {
+                        try {
+                            const data = JSON.parse(stored);
+                            existingArchives = data.tasks || [];
+                        } catch (e) {
+                            console.warn('Could not parse existing archive data:', e);
+                        }
+                    }
+                    
+                    // Add task to archives
+                    existingArchives.push(task);
+                    
+                    // Save back to localStorage
+                    const archiveData = {
+                        version: '1.0',
+                        month: archiveFileName.replace('archive-', '').replace('.json', ''),
+                        timestamp: new Date().toISOString(),
+                        tasks: existingArchives
+                    };
+                    
+                    localStorage.setItem(storageKey, JSON.stringify(archiveData));
+                    console.log(`✅ Task archived to localStorage: ${archiveFileName} (${existingArchives.length} tasks)`);
+                    
+                } catch (e) {
+                    console.error('Failed to move task to localStorage archive:', e);
+                }
+            }
+            
+            async loadArchivedTasksFromMonth(year, month) {
+                const monthStr = String(month).padStart(2, '0');
+                const archiveFileName = `archive-${year}-${monthStr}.json`;
+                
+                // Try file storage first if available
+                if (this.taskDirectoryHandle) {
+                    try {
+                        const fileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        
+                        console.log(`📂 Loaded ${data.tasks.length} archived tasks from file: ${archiveFileName}`);
+                        return data.tasks || [];
+                    } catch (e) {
+                        console.log(`No archive file found for ${year}-${month}, checking localStorage`);
+                        // Fall through to localStorage
+                    }
+                }
+                
+                // Try localStorage
+                try {
+                    const storageKey = `archive_${archiveFileName}`;
+                    const stored = localStorage.getItem(storageKey);
+                    
+                    if (stored) {
+                        const data = JSON.parse(stored);
+                        console.log(`📂 Loaded ${data.tasks.length} archived tasks from localStorage: ${archiveFileName}`);
+                        return data.tasks || [];
+                    } else {
+                        console.log(`No archive found in localStorage for ${year}-${month}`);
+                        return [];
+                    }
+                } catch (e) {
+                    console.log(`No archive found for ${year}-${month}`);
+                    return [];
+                }
+            }
+            
+            async loadPastYearArchives() {
+                try {
+                    const now = new Date();
+                    const currentYear = now.getFullYear();
+                    const oneYearAgo = new Date(now);
+                    oneYearAgo.setFullYear(currentYear - 1);
+                    
+                    let allArchives = [];
+                    
+                    // Load archives from past 12 months
+                    for (let i = 0; i < 12; i++) {
+                        const date = new Date(now);
+                        date.setMonth(date.getMonth() - i);
+                        
+                        const archives = await this.loadArchivedTasksFromMonth(
+                            date.getFullYear(), 
+                            date.getMonth() + 1
+                        );
+                        
+                        allArchives = allArchives.concat(archives);
+                    }
+                    
+                    console.log(`📂 Loaded ${allArchives.length} total archived tasks from past year`);
+                    return allArchives;
+                    
+                } catch (e) {
+                    console.error('Failed to load past year archives:', e);
+                    return [];
+                }
+            }
+            
+            async searchArchives(searchTerm) {
+                const archives = await this.loadPastYearArchives();
+                
+                if (!searchTerm) return archives;
+                
+                const term = searchTerm.toLowerCase();
+                return archives.filter(task => 
+                    task.title.toLowerCase().includes(term) ||
+                    task.content.toLowerCase().includes(term) ||
+                    task.category.toLowerCase().includes(term) ||
+                    (task.tags && task.tags.some(tag => tag.toLowerCase().includes(term)))
+                );
+            }
+            
+            // ==================== ARCHIVE MIGRATION UTILITY ====================
+            
+            async migrateExistingArchivedTasks() {
+                // This utility helps migrate archived tasks that are still in the main tasks array
+                // to the new monthly archive file system
+                
+                const archivedTasks = this.tasks.filter(t => t.archived && t.archivedAt);
+                
+                if (archivedTasks.length === 0) {
+                    console.log('✅ No archived tasks to migrate');
+                    alert('No archived tasks found in main file. Everything is already migrated!');
+                    return;
+                }
+                
+                const confirmed = confirm(
+                    `Found ${archivedTasks.length} archived tasks in the main task list.\n\n` +
+                    `Do you want to migrate them to monthly archive files?\n\n` +
+                    `This will:\n` +
+                    `- Move each task to its appropriate monthly archive file\n` +
+                    `- Remove them from the main task list\n` +
+                    `- Preserve all task data\n\n` +
+                    `This action cannot be undone (but you can export your data first).`
+                );
+                
+                if (!confirmed) {
+                    console.log('Migration cancelled by user');
+                    return;
+                }
+                
+                console.log(`🔄 Starting migration of ${archivedTasks.length} archived tasks...`);
+                let successCount = 0;
+                let failCount = 0;
+                
+                for (const task of archivedTasks) {
+                    try {
+                        await this.moveTaskToArchive(task);
+                        // Remove from main tasks array
+                        this.tasks = this.tasks.filter(t => t.id !== task.id);
+                        successCount++;
+                        console.log(`✅ Migrated: ${task.title}`);
+                    } catch (e) {
+                        console.error(`❌ Failed to migrate task ${task.id}:`, e);
+                        failCount++;
+                    }
+                }
+                
+                // Save the updated main task list
+                await this.saveTasks(true); // immediate save
+                
+                console.log(`\n📊 Migration Complete:`);
+                console.log(`   ✅ Successful: ${successCount}`);
+                console.log(`   ❌ Failed: ${failCount}`);
+                
+                alert(
+                    `Migration Complete!\n\n` +
+                    `Successfully migrated: ${successCount} tasks\n` +
+                    `Failed: ${failCount} tasks\n\n` +
+                    `Archived tasks are now stored in monthly files.`
+                );
+                
+                // Refresh the view
+                this.render();
+            }
+
 
             addTask() {
                 const title = document.getElementById('task-title').value.trim();
@@ -3934,39 +4254,101 @@
                 }
             }
 
-            archiveTask(id) {
+            async archiveTask(id) {
                 const task = this.tasks.find(t => t.id === id);
                 if (task) {
                     task.archived = true;
                     task.archivedAt = new Date().toISOString();
+                    
+                    // Always move to monthly archive file (both file storage and localStorage)
+                    await this.moveTaskToArchive(task);
+                    
+                    // Remove from main tasks array
+                    this.tasks = this.tasks.filter(t => t.id !== id);
+                    
                     this.saveTasks();
                     
-                    // Performance Optimization: Granular update for archive
-                    // (Only if showing "all" filter, otherwise task should disappear)
-                    if (this.currentFilter === 'all') {
-                        this.updateTaskArchiveDOM(id);
-                        this.updateStats();
-                    } else {
-                        // Task should be filtered out, do full re-render
-                        this.render();
-                    }
+                    // Task should be filtered out, do full re-render
+                    this.render();
                 }
             }
 
-            unarchiveTask(id) {
-                const task = this.tasks.find(t => t.id === id);
+            async unarchiveTask(id) {
+                // First check if task is in memory
+                let task = this.tasks.find(t => t.id === id);
+                
+                // If not in memory, check loaded archives
+                if (!task && this.loadedArchives.length > 0) {
+                    task = this.loadedArchives.find(t => t.id === id);
+                    if (task) {
+                        // Remove from archive storage
+                        await this.removeTaskFromArchive(task);
+                        // Add back to main tasks
+                        this.tasks.push(task);
+                    }
+                }
+                
                 if (task) {
                     task.archived = false;
                     task.archivedAt = null;
                     this.saveTasks();
                     
-                    // Performance Optimization: Granular update for unarchive
-                    if (this.currentFilter === 'all' || this.currentFilter === 'archived') {
-                        this.updateTaskArchiveDOM(id);
-                        this.updateStats();
-                    } else {
-                        this.render();
+                    // Clear loaded archives cache to force reload
+                    this.loadedArchives = [];
+                    this.archivesLoaded = false;
+                    
+                    // Full re-render
+                    this.render();
+                }
+            }
+            
+            async removeTaskFromArchive(task) {
+                if (!task.archivedAt) return;
+                
+                const archiveFileName = this.getArchiveFileName(task.archivedAt);
+                const date = new Date(task.archivedAt);
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1;
+                
+                // Try file storage first
+                if (this.taskDirectoryHandle) {
+                    try {
+                        const fileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        
+                        // Remove task from archive
+                        data.tasks = data.tasks.filter(t => t.id !== task.id);
+                        data.timestamp = new Date().toISOString();
+                        
+                        // Write back
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(JSON.stringify(data, null, 2));
+                        await writable.close();
+                        
+                        console.log(`✅ Removed task from archive file: ${archiveFileName}`);
+                        return;
+                    } catch (e) {
+                        console.log(`Could not remove from file archive, trying localStorage:`, e);
                     }
+                }
+                
+                // Try localStorage
+                try {
+                    const storageKey = `archive_${archiveFileName}`;
+                    const stored = localStorage.getItem(storageKey);
+                    
+                    if (stored) {
+                        const data = JSON.parse(stored);
+                        data.tasks = data.tasks.filter(t => t.id !== task.id);
+                        data.timestamp = new Date().toISOString();
+                        
+                        localStorage.setItem(storageKey, JSON.stringify(data));
+                        console.log(`✅ Removed task from localStorage archive: ${archiveFileName}`);
+                    }
+                } catch (e) {
+                    console.error('Failed to remove task from archive:', e);
                 }
             }
             
@@ -4223,12 +4605,17 @@
                 return { completed, total };
             }
 
-            filterTasks() {
+            async filterTasks() {
                 let filtered;
                 switch (this.currentFilter) {
                     case 'archived':
-                        // Show only archived tasks
-                        filtered = this.tasks.filter(t => t.archived);
+                        // Always load archived tasks from monthly files/localStorage
+                        if (!this.archivesLoaded) {
+                            this.loadedArchives = await this.loadPastYearArchives();
+                            this.archivesLoaded = true;
+                        }
+                        // Show archived tasks from archive storage
+                        filtered = this.loadedArchives;
                         break;
                     case 'active':
                         // Show non-archived, non-completed tasks
@@ -4252,7 +4639,9 @@
                 // Apply search filter if search term is present (UX Enhancement: Search title, description, subtasks)
                 if (this.searchTerm.trim()) {
                     const searchLower = this.searchTerm.toLowerCase();
-                    filtered = filtered.filter(t => {
+                    
+                    // Filter current results by search term
+                    const currentResults = filtered.filter(t => {
                         // Search in title
                         if (t.title.toLowerCase().includes(searchLower)) return true;
                         
@@ -4267,6 +4656,16 @@
                         
                         return false;
                     });
+                    
+                    // If searching and not on archived view, also search archives
+                    if (this.currentFilter !== 'archived') {
+                        const archivedResults = await this.searchArchives(this.searchTerm);
+                        console.log(`🔍 Found ${archivedResults.length} results in archives`);
+                        // Combine current tasks with archive search results
+                        filtered = [...currentResults, ...archivedResults];
+                    } else {
+                        filtered = currentResults;
+                    }
                     
                     // Update search result count
                     this.updateSearchResultCount(filtered.length);
@@ -4921,8 +5320,8 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 return div.innerHTML;
             }
 
-            render() {
-                const filteredTasks = this.filterTasks();
+            async render() {
+                const filteredTasks = await this.filterTasks();
                 const taskList = document.getElementById('task-list');
                 const emptyState = document.getElementById('empty-state');
 
@@ -5591,9 +5990,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             }
             
             // UX Enhancement: Reorder task in custom order array
-            reorderTask(sourceTaskId, targetTaskId, insertBefore) {
+            async reorderTask(sourceTaskId, targetTaskId, insertBefore) {
                 // Update customOrder array
-                const filteredTasks = this.filterTasks();
+                const filteredTasks = await this.filterTasks();
                 const sortedTasks = this.sortTasks(filteredTasks);
                 
                 // Build new custom order from currently displayed tasks
