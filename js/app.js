@@ -281,7 +281,7 @@
                     
                     <!-- Recent Activity -->
                     <div class="stats-section">
-                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">📈 Recent Activity</h3>
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>Recent Activity</h3>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
                             <div class="stat-item-row">
                                 <span>Completed this week:</span>
@@ -301,7 +301,7 @@
                     <!-- Due Dates -->
                     ${stats.overdue > 0 || stats.dueToday > 0 ? `
                         <div class="stats-section" style="background: rgba(244, 67, 54, 0.1); padding: 16px; border-radius: 8px; border: 1px solid rgba(244, 67, 54, 0.3);">
-                            <h3 style="color: #f44336; margin-bottom: 12px;">⚠️ Attention Needed</h3>
+                            <h3 style="color: #f44336; margin-bottom: 12px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>Attention Needed</h3>
                             <div style="display: flex; gap: 24px; flex-wrap: wrap;">
                                 ${stats.overdue > 0 ? `<div><span>🔴 Overdue:</span> <strong style="color: #f44336;">${stats.overdue} tasks</strong></div>` : ''}
                                 ${stats.dueToday > 0 ? `<div><span>⏰ Due today:</span> <strong style="color: #ff9800;">${stats.dueToday} tasks</strong></div>` : ''}
@@ -329,7 +329,7 @@
                     
                     <!-- By Priority (Active tasks only) -->
                     <div class="stats-section">
-                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">🎯 Active Tasks by Priority</h3>
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><circle cx="12" cy="12" r="10"></circle><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 18V6"></path></svg>Active Tasks by Priority</h3>
                         <div style="display: flex; gap: 24px; justify-content: space-around;">
                             <div class="priority-stat">
                                 <div style="font-size: 2em; color: #f44336;">🔴 ${stats.byPriority.high || 0}</div>
@@ -363,7 +363,7 @@
                     
                     <!-- Additional Insights -->
                     <div class="stats-section">
-                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">💡 Insights</h3>
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>Insights</h3>
                         <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
                             <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
                                 📝 <strong>${stats.withSubtasks}</strong> tasks have subtasks/next steps
@@ -2368,7 +2368,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 const display = document.getElementById('current-storage-display');
                 if (this.useFileStorage && this.fileStorageReady) {
                     display.innerHTML = `
-                        <span style="font-size: 24px;">📁</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                         <div>
                             <div style="font-weight: 600;">File Storage</div>
                             <div style="font-size: 13px; color: var(--text-secondary);">Tasks saved to local file</div>
@@ -2568,7 +2568,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                                     <span class="task-priority ${task.priority}">${task.priority.toUpperCase()}</span>
                                     <span class="task-category">${this.escapeHtml(task.category)}</span>
                                     ${progress ? `<span class="task-date">${progress.completed}/${progress.total} steps</span>` : ''}
-                                    ${dueDateStatus && !task.completed ? `<span class="due-date-badge" style="background: ${dueDateStatus.color}; color: white; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;">${dueDateStatus.icon} ${dueDateStatus.text}</span>` : ''}
+                                    ${dueDateStatus && !task.completed ? `<span class="due-date-badge ${dueDateStatus.cssClass}">${dueDateStatus.icon}${dueDateStatus.text}</span>` : ''}
                                 </div>
                                 ${task.subtasks.length > 0 || !task.archived ? this.renderSubtasksSection(task, showSubtasks) : ''}
                             ` : ''}
@@ -2587,7 +2587,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                         ` : ''}
                         <div class="task-actions">
                             <button class="task-action-btn task-edit-btn" onclick="taskManager.startEditTask(${task.id})">Edit</button>
-                            <button class="task-action-btn task-editor-btn" onclick="taskManager.openTaskEditor(${task.id})" title="Open in comprehensive editor">📝 Editor</button>
+                            <button class="task-action-btn task-editor-btn" onclick="taskManager.openTaskEditor(${task.id})" title="Open in comprehensive editor"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>Editor</button>
                             ${task.archived ? 
                                 `<button class="task-action-btn task-unarchive-btn" onclick="taskManager.unarchiveTask(${task.id})">Unarchive</button>` :
                                 `<button class="task-action-btn task-archive-btn" onclick="taskManager.archiveTask(${task.id})">Archive</button>`
@@ -2604,7 +2604,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
 
                 return `
                     <div class="subtasks-section">
-                        <div class="subtasks-title">📝 Next Steps (${task.subtasks.length})</div>
+                        <div class="subtasks-title"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>Next Steps (${task.subtasks.length})</div>
                         ${showSubtasks && hasSubtasks ? `
                             <ul class="subtask-list">
                                 ${task.subtasks.map(subtask => this.renderSubtask(taskId, subtask)).join('')}
@@ -3175,51 +3175,62 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             getDueDateStatus(dueDate) {
                 if (!dueDate) return null;
                 
+                // Get current date at midnight in local timezone
                 const now = new Date();
-                now.setHours(0, 0, 0, 0); // Reset to midnight for day comparison
+                now.setHours(0, 0, 0, 0);
                 
-                const due = new Date(dueDate);
+                // Parse date string in local timezone (not UTC)
+                // Split YYYY-MM-DD and create date explicitly to avoid timezone issues
+                const [year, month, day] = dueDate.split('-').map(Number);
+                const due = new Date(year, month - 1, day); // month is 0-indexed
                 due.setHours(0, 0, 0, 0);
                 
                 const diffTime = due - now;
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                
+                // SVG calendar icon generator (color matches the text color)
+                const calendarSVG = (color) => `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`;
+                
+                const alertSVG = (color) => `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
+                
+                const clockSVG = (color) => `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
                 
                 if (diffDays < 0) {
                     return { 
                         status: 'overdue', 
-                        color: '#f44336', 
-                        icon: '🔴', 
+                        cssClass: 'overdue',
+                        icon: alertSVG('#ef4444'), 
                         text: `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''}`
                     };
                 }
                 if (diffDays === 0) {
                     return { 
-                        status: 'today', 
-                        color: '#ff9800', 
-                        icon: '⚠️', 
+                        status: 'today',
+                        cssClass: 'today',
+                        icon: clockSVG('#ff9800'), 
                         text: 'Due today'
                     };
                 }
                 if (diffDays === 1) {
                     return { 
-                        status: 'tomorrow', 
-                        color: '#ffeb3b', 
-                        icon: '⏰', 
+                        status: 'tomorrow',
+                        cssClass: 'tomorrow',
+                        icon: calendarSVG('#fbbf24'), 
                         text: 'Due tomorrow'
                     };
                 }
                 if (diffDays <= 7) {
                     return { 
-                        status: 'week', 
-                        color: '#4caf50', 
-                        icon: '📅', 
+                        status: 'week',
+                        cssClass: 'week',
+                        icon: calendarSVG('#4caf50'), 
                         text: `Due in ${diffDays} days`
                     };
                 }
                 return { 
-                    status: 'future', 
-                    color: '#2196f3', 
-                    icon: '📅', 
+                    status: 'future',
+                    cssClass: 'future',
+                    icon: calendarSVG('#2196f3'), 
                     text: `Due in ${diffDays} days`
                 };
             }
@@ -3897,7 +3908,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 // Show storage method
                 if (this.useFileStorage && this.fileStorageReady) {
                     const dirName = localStorage.getItem('taskDirectoryName') || 'File';
-                    storageText = `📁 <span style="color: #4ade80;">${dirName}/tasks.json</span>`;
+                    storageText = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span style="color: #4ade80;">${dirName}/tasks.json</span>`;
                 } else if (this.useFileStorage && !this.fileStorageReady) {
                     storageText = '⚠️ <span style="color: #fbbf24;">File Storage (permission needed)</span>';
                 } else {
@@ -3920,7 +3931,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 if (!indicator) return;
                 
                 if (this.useFileStorage && this.fileStorageReady) {
-                    indicator.innerHTML = '📁 File';
+                    indicator.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>File';
                     indicator.style.background = 'rgba(34, 197, 94, 0.15)';
                     indicator.style.color = '#4ade80';
                     indicator.title = 'Tasks saved to local file';
@@ -3930,7 +3941,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     indicator.style.color = '#fbbf24';
                     indicator.title = 'File storage enabled but permission needed';
                 } else {
-                    indicator.innerHTML = '🌐 Browser';
+                    indicator.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>Browser';
                     indicator.style.background = 'rgba(107, 114, 128, 0.15)';
                     indicator.style.color = '#6b7280';
                     indicator.title = 'Tasks saved in browser (localStorage)';
@@ -4679,7 +4690,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
 <body>
     <div class="editor-container">
         <div class="editor-header">
-            <h1>📝 Task Editor</h1>
+            <h1><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>Task Editor</h1>
             <p>Edit task details and save changes back to your task list</p>
             <div class="task-id" onclick="copyEditorTaskId(${task.id}, event)" title="Click to copy ID" style="display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 4px; cursor: pointer; user-select: none; margin-top: 8px; font-size: 12px; color: #8b949e; font-family: 'Courier New', monospace; transition: all 0.2s;">
                 ID: ${task.id}
@@ -4738,17 +4749,27 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             </div>
 
             <div class="editor-field">
+                <label><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>Due Date</label>
+                <input 
+                    type="date" 
+                    id="editor-due-date" 
+                    value="${task.dueDate || ''}"
+                    style="width: 100%; padding: 10px; border: 2px solid #30363d; border-radius: 6px; font-size: 14px; background: #0d1117; color: #e0e0e0; font-family: inherit; color-scheme: dark;"
+                >
+            </div>
+
+            <div class="editor-field">
                 <div class="editor-subtasks">
-                    <h3>📋 Subtasks (${task.subtasks.length})</h3>
+                    <h3><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>Subtasks (${task.subtasks.length})</h3>
                     <div id="subtasks-container">
                         ${subtasksHTML}
                     </div>
-                    <button class="add-subtask-btn" onclick="addNewSubtask()">➕ Add New Subtask</button>
+                    <button class="add-subtask-btn" onclick="addNewSubtask()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>Add New Subtask</button>
                 </div>
             </div>
         </div>
         <div class="editor-actions">
-            <button class="editor-btn editor-btn-primary" onclick="saveTaskChanges()">💾 Save Changes</button>
+            <button class="editor-btn editor-btn-primary" onclick="saveTaskChanges()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Changes</button>
             <button class="editor-btn editor-btn-secondary" onclick="window.close()">Cancel</button>
         </div>
     </div>
@@ -4843,6 +4864,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             const description = document.getElementById('editor-description').value.trim();
             const priority = document.getElementById('editor-priority').value;
             const category = document.getElementById('editor-category').value.trim();
+            const dueDate = document.getElementById('editor-due-date').value;
 
             if (!title) {
                 alert('Task title is required');
@@ -4869,6 +4891,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 content: description,
                 priority: priority,
                 category: category,
+                dueDate: dueDate || null,
                 subtasks: taskData.subtasks
             };
             
