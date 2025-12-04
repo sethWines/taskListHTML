@@ -2285,7 +2285,6 @@
                 <button class="task-btn task-btn-primary" id="import-btn">Import Tasks</button>
                 <button class="task-btn task-btn-primary" id="auto-backup-btn" title="Enable automatic hourly backups to a single file (overwrites each time)">Auto-Backup</button>
                 <button class="task-btn task-btn-secondary" id="storage-settings-btn" title="Change storage location">⚙️ Storage Settings</button>
-                <button class="task-btn task-btn-secondary" id="migrate-archives-btn" title="Migrate old archived tasks to monthly archive files">📦 Migrate Archives</button>
                 <button class="task-btn task-btn-primary" id="enable-notifications-btn" title="Enable browser notifications for due tasks">🔔 Enable Reminders</button>
                 <button class="task-btn task-btn-secondary" id="view-stats-btn" title="View productivity statistics and insights">📊 Statistics</button>
                 <input type="file" id="import-file-input" accept=".json" style="display: none;">
@@ -3472,9 +3471,6 @@
                 document.getElementById('close-storage-settings').addEventListener('click', () => this.closeStorageSettings());
                 document.getElementById('switch-to-file-btn').addEventListener('click', () => this.switchToFileStorage());
                 document.getElementById('switch-to-browser-btn').addEventListener('click', () => this.switchToBrowserStorage());
-                
-                // Archive migration utility
-                document.getElementById('migrate-archives-btn').addEventListener('click', () => this.migrateExistingArchivedTasks());
                 document.getElementById('change-file-location-btn').addEventListener('click', () => this.changeFileLocation());
                 document.getElementById('clear-file-storage-btn').addEventListener('click', () => this.clearFileStorage());
                 document.getElementById('storage-settings-modal').addEventListener('click', (e) => {
@@ -4067,25 +4063,35 @@
             async loadPastYearArchives() {
                 try {
                     const now = new Date();
-                    const currentYear = now.getFullYear();
-                    const oneYearAgo = new Date(now);
-                    oneYearAgo.setFullYear(currentYear - 1);
                     
-                    let allArchives = [];
-                    const monthsWithArchives = [];
+                    // Create array of promises to load all months in parallel
+                    const loadPromises = [];
                     
-                    // Load archives from past 12 months
                     for (let i = 0; i < 12; i++) {
                         const date = new Date(now);
                         date.setMonth(date.getMonth() - i);
                         const year = date.getFullYear();
                         const month = date.getMonth() + 1;
+                        const monthKey = `${year}-${String(month).padStart(2, '0')}`;
                         
-                        const archives = await this.loadArchivedTasksFromMonth(year, month);
-                        
-                        if (archives.length > 0) {
-                            allArchives = allArchives.concat(archives);
-                            monthsWithArchives.push(`${year}-${String(month).padStart(2, '0')}`);
+                        // Load all months in parallel
+                        loadPromises.push(
+                            this.loadArchivedTasksFromMonth(year, month)
+                                .then(archives => ({ archives, monthKey }))
+                        );
+                    }
+                    
+                    // Wait for all months to load
+                    const results = await Promise.all(loadPromises);
+                    
+                    // Combine results
+                    let allArchives = [];
+                    const monthsWithArchives = [];
+                    
+                    for (const result of results) {
+                        if (result.archives.length > 0) {
+                            allArchives = allArchives.concat(result.archives);
+                            monthsWithArchives.push(result.monthKey);
                         }
                     }
                     
@@ -4120,69 +4126,6 @@
             
             // ==================== ARCHIVE MIGRATION UTILITY ====================
             
-            async migrateExistingArchivedTasks() {
-                // This utility helps migrate archived tasks that are still in the main tasks array
-                // to the new monthly archive file system
-                
-                const archivedTasks = this.tasks.filter(t => t.archived && t.archivedAt);
-                
-                if (archivedTasks.length === 0) {
-                    console.log('✅ No archived tasks to migrate');
-                    alert('No archived tasks found in main file. Everything is already migrated!');
-                    return;
-                }
-                
-                const confirmed = confirm(
-                    `Found ${archivedTasks.length} archived tasks in the main task list.\n\n` +
-                    `Do you want to migrate them to monthly archive files?\n\n` +
-                    `This will:\n` +
-                    `- Move each task to its appropriate monthly archive file\n` +
-                    `- Remove them from the main task list\n` +
-                    `- Preserve all task data\n\n` +
-                    `This action cannot be undone (but you can export your data first).`
-                );
-                
-                if (!confirmed) {
-                    console.log('Migration cancelled by user');
-                    return;
-                }
-                
-                console.log(`🔄 Starting migration of ${archivedTasks.length} archived tasks...`);
-                let successCount = 0;
-                let failCount = 0;
-                
-                for (const task of archivedTasks) {
-                    try {
-                        await this.moveTaskToArchive(task);
-                        // Remove from main tasks array
-                        this.tasks = this.tasks.filter(t => t.id !== task.id);
-                        successCount++;
-                        console.log(`✅ Migrated: ${task.title}`);
-                    } catch (e) {
-                        console.error(`❌ Failed to migrate task ${task.id}:`, e);
-                        failCount++;
-                    }
-                }
-                
-                // Save the updated main task list
-                await this.saveTasks(true); // immediate save
-                
-                console.log(`\n📊 Migration Complete:`);
-                console.log(`   ✅ Successful: ${successCount}`);
-                console.log(`   ❌ Failed: ${failCount}`);
-                
-                alert(
-                    `Migration Complete!\n\n` +
-                    `Successfully migrated: ${successCount} tasks\n` +
-                    `Failed: ${failCount} tasks\n\n` +
-                    `Archived tasks are now stored in monthly files.`
-                );
-                
-                // Refresh the view
-                this.render();
-            }
-
-
             addTask() {
                 const title = document.getElementById('task-title').value.trim();
                 const content = document.getElementById('task-content').value.trim();
@@ -4275,10 +4218,14 @@
                     // Remove from main tasks array
                     this.tasks = this.tasks.filter(t => t.id !== id);
                     
+                    // Clear archive cache so newly archived task appears when filtering
+                    this.loadedArchives = [];
+                    this.archivesLoaded = false;
+                    
                     this.saveTasks();
                     
                     // Task should be filtered out, do full re-render
-                    this.render();
+                    await this.render();
                 }
             }
 
@@ -4667,8 +4614,23 @@
                     });
                     
                     // If searching and not on archived view, also search archives
+                    // Cache archives during search to avoid reloading on every keystroke
                     if (this.currentFilter !== 'archived') {
-                        const archivedResults = await this.searchArchives(this.searchTerm);
+                        // Load archives once per search session
+                        if (!this.archivesLoaded) {
+                            this.loadedArchives = await this.loadPastYearArchives();
+                            this.archivesLoaded = true;
+                        }
+                        
+                        // Search in cached archives
+                        const archivedResults = this.loadedArchives.filter(t => {
+                            if (t.title.toLowerCase().includes(searchLower)) return true;
+                            if (t.content && t.content.toLowerCase().includes(searchLower)) return true;
+                            if (t.subtasks && t.subtasks.some(st => st.text.toLowerCase().includes(searchLower))) return true;
+                            if (t.tags && t.tags.some(tag => tag.toLowerCase().includes(searchLower))) return true;
+                            return false;
+                        });
+                        
                         console.log(`🔍 Found ${archivedResults.length} results in archives`);
                         // Combine current tasks with archive search results
                         filtered = [...currentResults, ...archivedResults];
