@@ -2131,6 +2131,38 @@
             
             // Get current storage usage
             getStorageUsage() {
+                // If using file storage, calculate based on tasks in memory
+                if (this.useFileStorage && this.fileStorageReady) {
+                    const tasksJSON = JSON.stringify(this.tasks);
+                    const tasksSize = tasksJSON.length * 2; // UTF-16 = 2 bytes per char
+                    
+                    // For file storage, we show actual file size vs a reasonable limit
+                    const REASONABLE_FILE_SIZE = 10 * 1024 * 1024; // 10 MB reasonable file size
+                    const percentUsed = parseFloat(((tasksSize / REASONABLE_FILE_SIZE) * 100).toFixed(1));
+                    
+                    return {
+                        totalBytes: tasksSize,
+                        totalKB: (tasksSize / 1024).toFixed(2),
+                        totalMB: (tasksSize / (1024 * 1024)).toFixed(2),
+                        tasksBytes: tasksSize,
+                        tasksKB: (tasksSize / 1024).toFixed(2),
+                        tasksMB: (tasksSize / (1024 * 1024)).toFixed(2),
+                        quotaBytes: REASONABLE_FILE_SIZE,
+                        quotaKB: (REASONABLE_FILE_SIZE / 1024).toFixed(0),
+                        quotaMB: (REASONABLE_FILE_SIZE / (1024 * 1024)).toFixed(0),
+                        usedKB: (tasksSize / 1024).toFixed(2),
+                        usedMB: (tasksSize / (1024 * 1024)).toFixed(2),
+                        availableKB: ((REASONABLE_FILE_SIZE - tasksSize) / 1024).toFixed(2),
+                        availableMB: ((REASONABLE_FILE_SIZE - tasksSize) / (1024 * 1024)).toFixed(2),
+                        percentUsed: percentUsed,
+                        compressionRatio: '100.0', // File storage doesn't use compression
+                        taskCount: this.tasks.length,
+                        breakdown: { 'tasks.json': tasksSize },
+                        storageMode: 'file'
+                    };
+                }
+                
+                // localStorage mode - calculate usage
                 // Estimate localStorage quota (5MB for most browsers, 10MB for some)
                 const QUOTA_BYTES = 5 * 1024 * 1024; // 5 MB in bytes (conservative estimate)
                 
@@ -2175,7 +2207,8 @@
                     percentUsed: percentUsed,
                     compressionRatio: compressionRatio,
                     taskCount: this.tasks.length,
-                    breakdown: breakdown // Include breakdown of all keys
+                    breakdown: breakdown, // Include breakdown of all keys
+                    storageMode: 'localStorage'
                 };
             }
             
@@ -2201,8 +2234,22 @@
                     breakdownText += `  • ... and ${Object.keys(info.breakdown).length - 10} more keys\n`;
                 }
                 
-                const message = `📊 Storage Usage Details
+                const storageIcon = info.storageMode === 'file' 
+                    ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>'
+                    : '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>';
+                
+                const modeText = info.storageMode === 'file' 
+                    ? 'File Storage Mode - Data saved to local file'
+                    : 'Browser Storage Mode - Data saved to localStorage';
+                
+                const compressionNote = info.storageMode === 'file'
+                    ? ''
+                    : `Compression Ratio: ${info.compressionRatio}%\n`;
+                
+                const message = `${storageIcon}Storage Usage Details
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Mode: ${modeText}
 
 Total Usage: ${info.usedMB} MB (${info.percentUsed}%)
 Available: ${info.availableMB} MB
@@ -2210,8 +2257,7 @@ Quota: ${info.quotaMB} MB
 
 Task Data: ${info.tasksMB} MB (${info.tasksKB} KB)
 Tasks Stored: ${info.taskCount}
-Compression Ratio: ${info.compressionRatio}%
-
+${compressionNote}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Avg per Task: ${avgPerTask} KB
 ${breakdownText}
@@ -2219,7 +2265,8 @@ ${breakdownText}
 
 ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' : info.percentUsed >= 50 ? '💡 You have plenty of space remaining.' : '✅ Storage usage is healthy!'}`;
                 
-                document.getElementById('storage-details').textContent = message;
+                const storageDetailsEl = document.getElementById('storage-details');
+                storageDetailsEl.innerHTML = `<pre style="margin: 0; font-family: monospace; white-space: pre-wrap; user-select: text;">${message}</pre>`;
                 // Use 'flex' instead of 'block' to maintain centering
                 document.getElementById('storage-modal').style.display = 'flex';
             }
