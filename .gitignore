@@ -2,3 +2,4 @@ SECURITY-AUDIT.md
 PORTABILITY-VERIFICATION.md
 *.tmp
 rec*
+/archive/*
