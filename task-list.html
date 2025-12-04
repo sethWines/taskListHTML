@@ -4029,8 +4029,9 @@
                 const monthStr = String(month).padStart(2, '0');
                 const archiveFileName = `archive-${year}-${monthStr}.json`;
                 
-                // Try file storage first if available
-                if (this.taskDirectoryHandle) {
+                // Check storage mode and use appropriate method
+                if (this.useFileStorage && this.taskDirectoryHandle) {
+                    // File storage mode - only check files
                     try {
                         const fileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
                         const file = await fileHandle.getFile();
@@ -4040,27 +4041,26 @@
                         console.log(`📂 Loaded ${data.tasks.length} archived tasks from file: ${archiveFileName}`);
                         return data.tasks || [];
                     } catch (e) {
-                        console.log(`No archive file found for ${year}-${month}, checking localStorage`);
-                        // Fall through to localStorage
-                    }
-                }
-                
-                // Try localStorage
-                try {
-                    const storageKey = `archive_${archiveFileName}`;
-                    const stored = localStorage.getItem(storageKey);
-                    
-                    if (stored) {
-                        const data = JSON.parse(stored);
-                        console.log(`📂 Loaded ${data.tasks.length} archived tasks from localStorage: ${archiveFileName}`);
-                        return data.tasks || [];
-                    } else {
-                        console.log(`No archive found in localStorage for ${year}-${month}`);
+                        // File doesn't exist - return empty (don't spam console)
                         return [];
                     }
-                } catch (e) {
-                    console.log(`No archive found for ${year}-${month}`);
-                    return [];
+                } else {
+                    // localStorage mode - only check localStorage
+                    try {
+                        const storageKey = `archive_${archiveFileName}`;
+                        const stored = localStorage.getItem(storageKey);
+                        
+                        if (stored) {
+                            const data = JSON.parse(stored);
+                            console.log(`📂 Loaded ${data.tasks.length} archived tasks from localStorage: ${archiveFileName}`);
+                            return data.tasks || [];
+                        } else {
+                            return [];
+                        }
+                    } catch (e) {
+                        console.error(`Error loading archive ${archiveFileName}:`, e);
+                        return [];
+                    }
                 }
             }
             
@@ -4072,21 +4072,30 @@
                     oneYearAgo.setFullYear(currentYear - 1);
                     
                     let allArchives = [];
+                    const monthsWithArchives = [];
                     
                     // Load archives from past 12 months
                     for (let i = 0; i < 12; i++) {
                         const date = new Date(now);
                         date.setMonth(date.getMonth() - i);
+                        const year = date.getFullYear();
+                        const month = date.getMonth() + 1;
                         
-                        const archives = await this.loadArchivedTasksFromMonth(
-                            date.getFullYear(), 
-                            date.getMonth() + 1
-                        );
+                        const archives = await this.loadArchivedTasksFromMonth(year, month);
                         
-                        allArchives = allArchives.concat(archives);
+                        if (archives.length > 0) {
+                            allArchives = allArchives.concat(archives);
+                            monthsWithArchives.push(`${year}-${String(month).padStart(2, '0')}`);
+                        }
                     }
                     
-                    console.log(`📂 Loaded ${allArchives.length} total archived tasks from past year`);
+                    // Log summary
+                    if (allArchives.length > 0) {
+                        console.log(`📂 Loaded ${allArchives.length} archived tasks from ${monthsWithArchives.length} month(s): ${monthsWithArchives.join(', ')}`);
+                    } else {
+                        console.log(`📂 No archived tasks found in past 12 months`);
+                    }
+                    
                     return allArchives;
                     
                 } catch (e) {
