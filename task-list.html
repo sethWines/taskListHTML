@@ -2483,14 +2483,14 @@
         // Task Manager Class
         class TaskManager {
             constructor() {
-                this.tasks = this.loadTasks();
                 this.currentFilter = 'all';
                 this.searchTerm = '';
                 this.sortMethod = 'priority';
                 this.editingTaskId = null;
                 this.editingSubtaskId = null;
                 this.showingSubtasks = {}; // Track which tasks have subtasks expanded
-                this.collapsedTasks = {}; // Track which tasks are collapsed
+                this.collapsedTasks = {}; // Track which tasks are collapsed - MUST be before loadTasks()
+                this.tasks = this.loadTasks(); // Load tasks AFTER initializing collapsedTasks
                 this.autoBackupEnabled = localStorage.getItem('autoBackupEnabled') === 'true';
                 this.autoBackupDirName = localStorage.getItem('autoBackupDirName') || null;
                 
@@ -3257,18 +3257,26 @@
                     
                     const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
                     
+                    let tasks;
                     if (isCompressed) {
                         // Decompress using LZ-String
                         const decompressed = LZString.decompressFromUTF16(stored);
-                        const tasks = JSON.parse(decompressed);
+                        tasks = JSON.parse(decompressed);
                         console.log(`📦 Loaded ${tasks.length} tasks (decompressed)`);
-                        return tasks;
                     } else {
                         // Legacy uncompressed data
-                        const tasks = JSON.parse(stored);
+                        tasks = JSON.parse(stored);
                         console.log(`📦 Loaded ${tasks.length} tasks (uncompressed - will compress on next save)`);
-                        return tasks;
                     }
+                    
+                    // Initialize all tasks as collapsed by default
+                    tasks.forEach(task => {
+                        if (!(task.id in this.collapsedTasks)) {
+                            this.collapsedTasks[task.id] = true;
+                        }
+                    });
+                    
+                    return tasks;
                 } catch (e) {
                     console.error('Failed to load tasks:', e);
                     console.log('🔄 Attempting recovery from backup or returning empty array...');
@@ -3358,6 +3366,8 @@
                 };
 
                 this.tasks.push(task);
+                // Set new tasks as collapsed by default
+                this.collapsedTasks[task.id] = true;
                 this.saveTasks();
                 this.updateTagSuggestions(); // Update tag autocomplete
                 this.render();
@@ -5581,7 +5591,7 @@
             line-height: 1.6;
         }
         .editor-container {
-            max-width: 900px;
+            max-width: 95%;
             margin: 0 auto;
             background: #161b22;
             border-radius: 12px;
