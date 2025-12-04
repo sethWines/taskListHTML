@@ -1,0 +1,377 @@
+/* ==================== Theme Variations ==================== */
+        [data-theme="blue"] {
+            --primary-orange: #60a5fa;
+            --primary-orange-dark: #3b82f6;
+            --primary-orange-darker: #2563eb;
+            --primary-orange-darkest: #1e40af;
+            --accent-color: #60a5fa;
+            --accent-hover: #3b82f6;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #3b82f6 100%);
+            --gradient-text: linear-gradient(135deg, #60a5fa 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #3b82f6 0%, #2563eb 5%, #1e40af 10%, #000000 15%, #000000 85%, #1e40af 90%, #2563eb 95%, #3b82f6 100%);
+        }
+
+        [data-theme="purple"] {
+            --primary-orange: #a78bfa;
+            --primary-orange-dark: #8b5cf6;
+            --primary-orange-darker: #7c3aed;
+            --primary-orange-darkest: #6d28d9;
+            --accent-color: #a78bfa;
+            --accent-hover: #8b5cf6;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #8b5cf6 100%);
+            --gradient-text: linear-gradient(135deg, #a78bfa 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #8b5cf6 0%, #7c3aed 5%, #6d28d9 10%, #000000 15%, #000000 85%, #6d28d9 90%, #7c3aed 95%, #8b5cf6 100%);
+        }
+
+        [data-theme="green"] {
+            --primary-orange: #4ade80;
+            --primary-orange-dark: #22c55e;
+            --primary-orange-darker: #16a34a;
+            --primary-orange-darkest: #15803d;
+            --accent-color: #4ade80;
+            --accent-hover: #22c55e;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #22c55e 100%);
+            --gradient-text: linear-gradient(135deg, #4ade80 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #22c55e 0%, #16a34a 5%, #15803d 10%, #000000 15%, #000000 85%, #15803d 90%, #16a34a 95%, #22c55e 100%);
+        }
+
+        [data-theme="red"] {
+            --primary-orange: #f87171;
+            --primary-orange-dark: #ef4444;
+            --primary-orange-darker: #dc2626;
+            --primary-orange-darkest: #b91c1c;
+            --accent-color: #f87171;
+            --accent-hover: #ef4444;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #ef4444 100%);
+            --gradient-text: linear-gradient(135deg, #f87171 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #ef4444 0%, #dc2626 5%, #b91c1c 10%, #000000 15%, #000000 85%, #b91c1c 90%, #dc2626 95%, #ef4444 100%);
+        }
+
+        [data-theme="pink"] {
+            --primary-orange: #f9a8d4;
+            --primary-orange-dark: #ec4899;
+            --primary-orange-darker: #db2777;
+            --primary-orange-darkest: #be185d;
+            --accent-color: #f9a8d4;
+            --accent-hover: #ec4899;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #ec4899 100%);
+            --gradient-text: linear-gradient(135deg, #f9a8d4 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #ec4899 0%, #db2777 5%, #be185d 10%, #000000 15%, #000000 85%, #be185d 90%, #db2777 95%, #ec4899 100%);
+        }
+
+        [data-theme="teal"] {
+            --primary-orange: #2dd4bf;
+            --primary-orange-dark: #14b8a6;
+            --primary-orange-darker: #0d9488;
+            --primary-orange-darkest: #0f766e;
+            --accent-color: #2dd4bf;
+            --accent-hover: #14b8a6;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #14b8a6 100%);
+            --gradient-text: linear-gradient(135deg, #2dd4bf 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #14b8a6 0%, #0d9488 5%, #0f766e 10%, #000000 15%, #000000 85%, #0f766e 90%, #0d9488 95%, #14b8a6 100%);
+        }
+
+        [data-theme="golden"] {
+            --primary-orange: #fbbf24;
+            --primary-orange-dark: #f59e0b;
+            --primary-orange-darker: #d97706;
+            --primary-orange-darkest: #b45309;
+            --accent-color: #fbbf24;
+            --accent-hover: #f59e0b;
+            --gradient-header: linear-gradient(135deg, #1a1410 0%, #2d2416 25%, #3d2a14 50%, #2a1810 75%, #1a1410 100%);
+            --gradient-text: linear-gradient(90deg, #fbbf24 0%, #f59e0b 15%, #fb923c 30%, #f97316 45%, #ea580c 60%, #dc2626 75%, #be123c 85%, #fbbf24 100%);
+            --gradient-background: linear-gradient(to right, 
+                #b45309 0%, 
+                #d97706 2%, 
+                #f59e0b 4%, 
+                #fbbf24 6%, 
+                #fb923c 8%, 
+                #f97316 10%, 
+                #ea580c 12%, 
+                #dc2626 14%, 
+                #0a0805 18%, 
+                #0a0805 82%, 
+                #dc2626 86%, 
+                #ea580c 88%, 
+                #f97316 90%, 
+                #fb923c 92%, 
+                #fbbf24 94%, 
+                #f59e0b 96%, 
+                #d97706 98%, 
+                #b45309 100%);
+            --bg-main: #0a0805;
+            --bg-container: #14100a;
+            --bg-container-dark: #0a0805;
+            --bg-card: #1f1810;
+            --bg-hint: #18120d;
+            --border-main: #3d2a14;
+            --border-section: #1f1810;
+        }
+
+        [data-theme="cyan"] {
+            --primary-orange: #22d3ee;
+            --primary-orange-dark: #06b6d4;
+            --primary-orange-darker: #0891b2;
+            --primary-orange-darkest: #0e7490;
+            --accent-color: #22d3ee;
+            --accent-hover: #06b6d4;
+            --gradient-header: linear-gradient(135deg, #000000 0%, #06b6d4 100%);
+            --gradient-text: linear-gradient(135deg, #22d3ee 0%, #000000 100%);
+            --gradient-background: linear-gradient(to right, #06b6d4 0%, #0891b2 5%, #0e7490 10%, #000000 15%, #000000 85%, #0e7490 90%, #0891b2 95%, #06b6d4 100%);
+        }
+
+        [data-theme="synthwave"] {
+            --primary-orange: #a78bfa;
+            --primary-orange-dark: #8b5cf6;
+            --primary-orange-darker: #7c3aed;
+            --primary-orange-darkest: #6d28d9;
+            --accent-color: #a78bfa;
+            --accent-hover: #8b5cf6;
+            --gradient-header: linear-gradient(135deg, #1a0033 0%, #2d1b4e 50%, #1a0033 100%);
+            --gradient-text: linear-gradient(90deg, #a78bfa 0%, #ec4899 25%, #f59e0b 50%, #22c55e 75%, #06b6d4 100%);
+            --gradient-background: linear-gradient(to right, 
+                #7c3aed 0%, 
+                #a855f7 3%, 
+                #ec4899 6%, 
+                #f43f5e 9%, 
+                #f59e0b 12%, 
+                #0a0a0a 18%, 
+                #0a0a0a 82%, 
+                #f59e0b 88%, 
+                #f43f5e 91%, 
+                #ec4899 94%, 
+                #a855f7 97%, 
+                #7c3aed 100%);
+            --bg-main: #0a0514;
+            --bg-container: #12081f;
+            --bg-container-dark: #0a0514;
+            --bg-card: #1a0f2e;
+            --bg-hint: #150a26;
+            --border-main: #2d1b4e;
+            --border-section: #1a0f2e;
+        }
+
+        [data-theme="prism"] {
+            --primary-orange: #2dd4bf;
+            --primary-orange-dark: #14b8a6;
+            --primary-orange-darker: #0d9488;
+            --primary-orange-darkest: #0f766e;
+            --accent-color: #2dd4bf;
+            --accent-hover: #14b8a6;
+            --gradient-header: linear-gradient(135deg, #0a1929 0%, #1e3a5f 25%, #1a4d4d 50%, #2d1b4e 75%, #0a1929 100%);
+            --gradient-text: linear-gradient(90deg, #2dd4bf 0%, #06b6d4 15%, #3b82f6 30%, #8b5cf6 45%, #a855f7 60%, #ec4899 75%, #14b8a6 90%, #2dd4bf 100%);
+            --gradient-background: linear-gradient(to right, 
+                #0d9488 0%, 
+                #14b8a6 2%, 
+                #2dd4bf 4%, 
+                #06b6d4 6%, 
+                #3b82f6 8%, 
+                #6366f1 10%, 
+                #8b5cf6 12%, 
+                #a855f7 14%, 
+                #020408 18%, 
+                #020408 82%, 
+                #a855f7 86%, 
+                #8b5cf6 88%, 
+                #6366f1 90%, 
+                #3b82f6 92%, 
+                #06b6d4 94%, 
+                #2dd4bf 96%, 
+                #14b8a6 98%, 
+                #0d9488 100%);
+            --bg-main: #020408;
+            --bg-container: #0a1218;
+            --bg-container-dark: #020408;
+            --bg-card: #0f1a24;
+            --bg-hint: #0d1520;
+            --border-main: #1e3a5f;
+            --border-section: #0f1a24;
+        }
+
+
+
+        /* ==================== Theme Selector Styles ==================== */
+        .theme-selector {
+            position: relative;
+            z-index: 10001;
+        }
+
+        .theme-toggle-btn {
+            padding: 10px 16px;
+            background: rgba(255, 168, 52, 0.15);
+            border: 2px solid var(--primary-orange);
+            border-radius: 8px;
+            color: var(--primary-orange);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .theme-toggle-btn:hover {
+            background: rgba(255, 168, 52, 0.25);
+            transform: translateY(-2px);
+        }
+
+        /* Theme-specific button colors */
+        [data-theme="blue"] .theme-toggle-btn {
+            background: rgba(96, 165, 250, 0.15);
+            color: #60a5fa;
+            border-color: #60a5fa;
+        }
+        [data-theme="blue"] .theme-toggle-btn:hover {
+            background: rgba(96, 165, 250, 0.25);
+        }
+
+        [data-theme="purple"] .theme-toggle-btn {
+            background: rgba(167, 139, 250, 0.15);
+            color: #a78bfa;
+            border-color: #a78bfa;
+        }
+        [data-theme="purple"] .theme-toggle-btn:hover {
+            background: rgba(167, 139, 250, 0.25);
+        }
+
+        [data-theme="green"] .theme-toggle-btn {
+            background: rgba(74, 222, 128, 0.15);
+            color: #4ade80;
+            border-color: #4ade80;
+        }
+        [data-theme="green"] .theme-toggle-btn:hover {
+            background: rgba(74, 222, 128, 0.25);
+        }
+
+        [data-theme="red"] .theme-toggle-btn {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+            border-color: #f87171;
+        }
+        [data-theme="red"] .theme-toggle-btn:hover {
+            background: rgba(248, 113, 113, 0.25);
+        }
+
+        [data-theme="pink"] .theme-toggle-btn {
+            background: rgba(249, 168, 212, 0.15);
+            color: #f9a8d4;
+            border-color: #f9a8d4;
+        }
+        [data-theme="pink"] .theme-toggle-btn:hover {
+            background: rgba(249, 168, 212, 0.25);
+        }
+
+        [data-theme="teal"] .theme-toggle-btn {
+            background: rgba(45, 212, 191, 0.15);
+            color: #2dd4bf;
+            border-color: #2dd4bf;
+        }
+        [data-theme="teal"] .theme-toggle-btn:hover {
+            background: rgba(45, 212, 191, 0.25);
+        }
+
+        [data-theme="golden"] .theme-toggle-btn {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(249, 115, 22, 0.15) 33%, rgba(234, 88, 12, 0.15) 66%, rgba(220, 38, 38, 0.15) 100%);
+            color: #fbbf24;
+            border-color: #fbbf24;
+        }
+        [data-theme="golden"] .theme-toggle-btn:hover {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(249, 115, 22, 0.25) 33%, rgba(234, 88, 12, 0.25) 66%, rgba(220, 38, 38, 0.25) 100%);
+        }
+
+        [data-theme="cyan"] .theme-toggle-btn {
+            background: rgba(34, 211, 238, 0.15);
+            color: #22d3ee;
+            border-color: #22d3ee;
+        }
+        [data-theme="cyan"] .theme-toggle-btn:hover {
+            background: rgba(34, 211, 238, 0.25);
+        }
+
+        [data-theme="synthwave"] .theme-toggle-btn {
+            background: linear-gradient(90deg, rgba(167, 139, 250, 0.15) 0%, rgba(236, 72, 153, 0.15) 50%, rgba(245, 158, 11, 0.15) 100%);
+            color: #a78bfa;
+        }
+
+        [data-theme="synthwave"] .theme-toggle-btn:hover {
+            background: linear-gradient(90deg, rgba(167, 139, 250, 0.25) 0%, rgba(236, 72, 153, 0.25) 50%, rgba(245, 158, 11, 0.25) 100%);
+        }
+
+        [data-theme="prism"] .theme-toggle-btn {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.15) 0%, rgba(59, 130, 246, 0.15) 33%, rgba(139, 92, 246, 0.15) 66%, rgba(168, 85, 247, 0.15) 100%);
+            color: #2dd4bf;
+        }
+
+        [data-theme="prism"] .theme-toggle-btn:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.25) 0%, rgba(59, 130, 246, 0.25) 33%, rgba(139, 92, 246, 0.25) 66%, rgba(236, 72, 153, 0.25) 100%);
+        }
+
+        .theme-dropdown {
+            position: absolute;
+            top: 50px;
+            right: 0;
+            background: var(--bg-container, #161b22);
+            border: 2px solid var(--border-color, #30363d);
+            border-radius: 8px;
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 180px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            z-index: 10000;
+        }
+
+        .theme-dropdown.active {
+            display: flex;
+        }
+
+        .theme-option {
+            padding: 10px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-primary, #e0e0e0);
+            font-size: 14px;
+            border: 2px solid transparent;
+        }
+
+        .theme-option:hover {
+            background: var(--bg-card, #21262d);
+        }
+
+        .theme-option.active {
+            background: var(--accent-color);
+            color: #000;
+            font-weight: 600;
+        }
+
+        .theme-color-preview {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .theme-selector {
+                align-self: flex-end;
+                margin-top: 10px;
+            }
+
+            .theme-toggle-btn {
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+        }
+
+        

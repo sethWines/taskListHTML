@@ -1,0 +1,5101 @@
+// Task Manager Class
+        class TaskManager {
+            constructor() {
+                this.currentFilter = 'all';
+                this.searchTerm = '';
+                this.sortMethod = 'priority';
+                this.editingTaskId = null;
+                this.editingSubtaskId = null;
+                this.showingSubtasks = {}; // Track which tasks have subtasks expanded
+                this.collapsedTasks = {}; // Track which tasks are collapsed - MUST be before loadTasks()
+                this.tasks = this.loadTasks(); // Load tasks AFTER initializing collapsedTasks
+                this.autoBackupEnabled = localStorage.getItem('autoBackupEnabled') === 'true';
+                this.autoBackupDirName = localStorage.getItem('autoBackupDirName') || null;
+                
+                // Performance Optimization: Debounced saves
+                this.saveTimeout = null;
+                this.pendingSave = false;
+                
+                // Performance Optimization: Virtual Scrolling
+                this.virtualScrollEnabled = true; // Can be toggled if needed
+                this.itemsPerPage = 50; // Show 50 tasks at a time
+                this.currentPage = 0;
+                this.totalPages = 0;
+                this.visibleTasks = [];
+                this.allSortedTasks = []; // Cache of sorted/filtered tasks
+                this.searchTerm = ''; // UX Enhancement: Search functionality
+                this.customOrder = JSON.parse(localStorage.getItem('customTaskOrder')) || []; // UX Enhancement: Drag & drop custom order
+                this.undoStack = []; // UX Enhancement: Undo functionality
+                this.redoStack = []; // UX Enhancement: Redo functionality
+                this.maxUndoSteps = 20; // Limit undo history
+                this.autoBackupInterval = null;
+                this.directoryHandle = null;
+                this.dbName = 'TaskManagerDB';
+                this.dbVersion = 1;
+                this.currentTheme = localStorage.getItem('theme') || 'orange';
+                
+                // File-based storage properties
+                this.useFileStorage = localStorage.getItem('useFileStorage') === 'true';
+                this.taskFileHandle = null;
+                this.taskDirectoryHandle = null;
+                this.fileStorageReady = false;
+                this.loadedArchives = []; // Cache for loaded archived tasks
+                this.archivesLoaded = false;
+                
+                this.loadTheme();
+                this.init();
+            }
+
+            async init() {
+                this.setupEventListeners();
+                this.setupStorageSync(); // Add cross-tab synchronization
+                
+                // Try to restore file storage handle if enabled
+                if (this.useFileStorage) {
+                    const restored = await this.restoreFileStorageHandle();
+                    if (restored) {
+                        // Load tasks from file (includes auto-migration)
+                        const fileTasks = await this.loadFromFile();
+                        if (fileTasks.length > 0) {
+                            this.tasks = fileTasks;
+                            // Initialize collapsed state
+                            this.tasks.forEach(task => {
+                                if (!(task.id in this.collapsedTasks)) {
+                                    this.collapsedTasks[task.id] = true;
+                                }
+                            });
+                        }
+                    } else {
+                        // File storage failed, disable it
+                        this.useFileStorage = false;
+                        localStorage.setItem('useFileStorage', 'false');
+                    }
+                } else {
+                    // Using localStorage - auto-migrate any archived tasks
+                    await this.autoMigrateArchivedTasks();
+                }
+                
+                // Update indicators
+                this.updateFileStorageIndicator();
+                this.updateFooter();
+                
+                // Check if first run and file storage not set up
+                const hasSeenSetup = localStorage.getItem('hasSeenFileStorageSetup');
+                if (!hasSeenSetup && !this.useFileStorage) {
+                    // Show setup wizard on first run
+                    setTimeout(() => this.showFileStorageSetupWizard(), 1000);
+                }
+                
+                await this.render();
+                // Restore directory handle from IndexedDB if auto-backup is enabled
+                if (this.autoBackupEnabled) {
+                    await this.restoreDirectoryHandle();
+                    this.updateAutoBackupButton();
+                    this.startAutoBackup();
+                }
+                // Auto-backup on page close
+                window.addEventListener('beforeunload', () => {
+                    if (this.autoBackupEnabled && this.directoryHandle) {
+                        this.performAutoBackup();
+                    }
+                });
+                // UX Enhancement: Check for due tasks (but don't auto-request permission)
+                this.checkDueTasks();
+                // Check due tasks daily
+                setInterval(() => this.checkDueTasks(), 24 * 60 * 60 * 1000);
+                // UX Enhancement: Update tag suggestions from existing tasks
+                this.updateTagSuggestions();
+            }
+            
+            // UX Enhancement: Browser notifications for due tasks
+            async checkDueTasks() {
+                // Only send notifications if permission already granted
+                // (Don't auto-request - user must enable via settings)
+                
+                // Find tasks due today or overdue
+                const dueTasks = this.tasks.filter(t => {
+                    if (t.completed || t.archived || !t.dueDate) return false;
+                    
+                    const status = this.getDueDateStatus(t.dueDate);
+                    return status && ['today', 'overdue'].includes(status.status);
+                });
+                
+                // Send notification if there are due tasks AND permission granted
+                if (dueTasks.length > 0 && 'Notification' in window && Notification.permission === 'granted') {
+                    const overdueCount = dueTasks.filter(t => {
+                        const status = this.getDueDateStatus(t.dueDate);
+                        return status.status === 'overdue';
+                    }).length;
+                    
+                    const todayCount = dueTasks.length - overdueCount;
+                    
+                    let body = '';
+                    if (overdueCount > 0) {
+                        body += `${overdueCount} overdue task${overdueCount !== 1 ? 's' : ''}`;
+                    }
+                    if (todayCount > 0) {
+                        if (body) body += ' • ';
+                        body += `${todayCount} due today`;
+                    }
+                    
+                    new Notification('📅 Task Reminders', {
+                        body: body,
+                        icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23ffa834"/%3E%3C/svg%3E',
+                        badge: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23ffa834"/%3E%3C/svg%3E',
+                        requireInteraction: false,
+                        silent: false
+                    });
+                    
+                    console.log(`🔔 Sent notification for ${dueTasks.length} due task(s)`);
+                }
+            }
+            
+            // UX Enhancement: Request notification permission (must be triggered by user action)
+            async requestNotificationPermission() {
+                if ('Notification' in window && Notification.permission === 'default') {
+                    try {
+                        const permission = await Notification.requestPermission();
+                        if (permission === 'granted') {
+                            alert('✓ Notifications enabled! You\'ll receive daily reminders for due tasks.');
+                            this.checkDueTasks(); // Check immediately after granting
+                        } else {
+                            alert('Notifications disabled. You can enable them later in browser settings.');
+                        }
+                    } catch (e) {
+                        console.error('Notification permission request failed:', e);
+                    }
+                } else if (Notification.permission === 'granted') {
+                    alert('Notifications are already enabled!');
+                } else if (Notification.permission === 'denied') {
+                    alert('Notifications are blocked. Please enable them in your browser settings.');
+                }
+            }
+            
+            // UX Enhancement: Calculate comprehensive task statistics
+            calculateStats() {
+                const now = new Date();
+                const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+                const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+                
+                const allTasks = this.tasks.filter(t => !t.archived);
+                const completed = allTasks.filter(t => t.completed);
+                const active = allTasks.filter(t => !t.completed);
+                
+                const completedThisWeek = completed.filter(t => 
+                    t.completedAt && new Date(t.completedAt) >= weekAgo
+                ).length;
+                
+                const completedThisMonth = completed.filter(t =>
+                    t.completedAt && new Date(t.completedAt) >= monthAgo
+                ).length;
+                
+                // By category
+                const byCategory = {};
+                allTasks.forEach(task => {
+                    const cat = task.category || 'General';
+                    if (!byCategory[cat]) {
+                        byCategory[cat] = { total: 0, completed: 0, active: 0 };
+                    }
+                    byCategory[cat].total++;
+                    if (task.completed) byCategory[cat].completed++;
+                    else byCategory[cat].active++;
+                });
+                
+                // By priority
+                const byPriority = { high: 0, medium: 0, low: 0 };
+                active.forEach(task => {
+                    byPriority[task.priority] = (byPriority[task.priority] || 0) + 1;
+                });
+                
+                // Tags usage
+                const tagCounts = {};
+                allTasks.forEach(task => {
+                    if (task.tags) {
+                        task.tags.forEach(tag => {
+                            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                        });
+                    }
+                });
+                const topTags = Object.entries(tagCounts)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10);
+                
+                // Due date analysis
+                const withDueDates = allTasks.filter(t => t.dueDate && !t.completed);
+                const overdue = withDueDates.filter(t => {
+                    const status = this.getDueDateStatus(t.dueDate);
+                    return status && status.status === 'overdue';
+                }).length;
+                
+                const dueToday = withDueDates.filter(t => {
+                    const status = this.getDueDateStatus(t.dueDate);
+                    return status && status.status === 'today';
+                }).length;
+                
+                const completionRate = allTasks.length > 0 
+                    ? ((completed.length / allTasks.length) * 100).toFixed(1)
+                    : 0;
+                
+                return {
+                    totalTasks: allTasks.length,
+                    completedTasks: completed.length,
+                    activeTasks: active.length,
+                    completionRate: completionRate,
+                    completedThisWeek,
+                    completedThisMonth,
+                    avgPerDay: (completedThisMonth / 30).toFixed(1),
+                    byCategory,
+                    byPriority,
+                    topTags,
+                    overdue,
+                    dueToday,
+                    withSubtasks: allTasks.filter(t => t.subtasks && t.subtasks.length > 0).length
+                };
+            }
+            
+            // UX Enhancement: Show statistics modal
+            showStatsModal() {
+                const stats = this.calculateStats();
+                const content = document.getElementById('stats-content');
+                
+                content.innerHTML = `
+                    <!-- Overview Stats -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: var(--accent-color);">${stats.totalTasks}</div>
+                            <div class="stat-label">Total Tasks</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: #4caf50;">${stats.completedTasks}</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: #ff9800;">${stats.activeTasks}</div>
+                            <div class="stat-label">Active</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" style="font-size: 2em; color: #2196f3;">${stats.completionRate}%</div>
+                            <div class="stat-label">Completion Rate</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Activity -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">📈 Recent Activity</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                            <div class="stat-item-row">
+                                <span>Completed this week:</span>
+                                <strong style="color: #4caf50;">${stats.completedThisWeek} tasks</strong>
+                            </div>
+                            <div class="stat-item-row">
+                                <span>Completed this month:</span>
+                                <strong style="color: #4caf50;">${stats.completedThisMonth} tasks</strong>
+                            </div>
+                            <div class="stat-item-row">
+                                <span>Average per day:</span>
+                                <strong style="color: #2196f3;">${stats.avgPerDay} tasks</strong>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Due Dates -->
+                    ${stats.overdue > 0 || stats.dueToday > 0 ? `
+                        <div class="stats-section" style="background: rgba(244, 67, 54, 0.1); padding: 16px; border-radius: 8px; border: 1px solid rgba(244, 67, 54, 0.3);">
+                            <h3 style="color: #f44336; margin-bottom: 12px;">⚠️ Attention Needed</h3>
+                            <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                                ${stats.overdue > 0 ? `<div><span>🔴 Overdue:</span> <strong style="color: #f44336;">${stats.overdue} tasks</strong></div>` : ''}
+                                ${stats.dueToday > 0 ? `<div><span>⏰ Due today:</span> <strong style="color: #ff9800;">${stats.dueToday} tasks</strong></div>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- By Category -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">📁 Tasks by Category</h3>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            ${Object.entries(stats.byCategory).map(([cat, data]) => `
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="min-width: 120px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(cat)}</div>
+                                    <div style="flex: 1; height: 24px; background: var(--bg-tertiary); border-radius: 12px; overflow: hidden; position: relative;">
+                                        <div style="height: 100%; background: linear-gradient(90deg, var(--accent-color) 0%, var(--primary-orange-dark) 100%); width: ${data.total > 0 ? (data.completed / data.total * 100) : 0}%; transition: width 0.3s;"></div>
+                                    </div>
+                                    <div style="min-width: 100px; text-align: right; font-size: 14px; color: var(--text-secondary);">
+                                        <span style="color: #4caf50;">${data.completed}</span> / ${data.total}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <!-- By Priority (Active tasks only) -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">🎯 Active Tasks by Priority</h3>
+                        <div style="display: flex; gap: 24px; justify-content: space-around;">
+                            <div class="priority-stat">
+                                <div style="font-size: 2em; color: #f44336;">🔴 ${stats.byPriority.high || 0}</div>
+                                <div style="color: var(--text-secondary);">High</div>
+                            </div>
+                            <div class="priority-stat">
+                                <div style="font-size: 2em; color: #ff9800;">🟡 ${stats.byPriority.medium || 0}</div>
+                                <div style="color: var(--text-secondary);">Medium</div>
+                            </div>
+                            <div class="priority-stat">
+                                <div style="font-size: 2em; color: #4caf50;">🟢 ${stats.byPriority.low || 0}</div>
+                                <div style="color: var(--text-secondary);">Low</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Top Tags -->
+                    ${stats.topTags.length > 0 ? `
+                        <div class="stats-section">
+                            <h3 style="color: var(--text-primary); margin-bottom: 12px;">🏷️ Most Used Tags</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                ${stats.topTags.map(([tag, count]) => `
+                                    <span class="tag-badge" style="background: ${this.getTagColor(tag)}; display: flex; align-items: center; gap: 6px;">
+                                        #${this.escapeHtml(tag)}
+                                        <span style="opacity: 0.8; font-size: 0.9em;">(${count})</span>
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- Additional Insights -->
+                    <div class="stats-section">
+                        <h3 style="color: var(--text-primary); margin-bottom: 12px;">💡 Insights</h3>
+                        <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
+                            <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                                📝 <strong>${stats.withSubtasks}</strong> tasks have subtasks/next steps
+                            </li>
+                            ${stats.completedThisWeek > 0 ? `
+                                <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                                    🎉 Great job! You completed <strong>${stats.completedThisWeek}</strong> tasks this week
+                                </li>
+                            ` : ''}
+                            ${stats.avgPerDay > 1 ? `
+                                <li style="padding: 8px; background: var(--bg-secondary); border-radius: 6px;">
+                                    🔥 You're on fire! Averaging <strong>${stats.avgPerDay}</strong> tasks per day
+                                </li>
+                            ` : ''}
+                            ${stats.activeTasks === 0 && stats.totalTasks > 0 ? `
+                                <li style="padding: 8px; background: rgba(76, 175, 80, 0.2); border-radius: 6px; color: #4caf50;">
+                                    ✨ Amazing! All tasks completed!
+                                </li>
+                            ` : ''}
+                        </ul>
+                    </div>
+                `;
+                
+                document.getElementById('stats-modal').style.display = 'block';
+            }
+            
+            closeStatsModal() {
+                document.getElementById('stats-modal').style.display = 'none';
+            }
+            
+            // UX Enhancement: Undo/Redo System
+            saveStateForUndo(actionName = 'Action') {
+                // Clone current state
+                const state = {
+                    tasks: JSON.parse(JSON.stringify(this.tasks)),
+                    actionName: actionName,
+                    timestamp: Date.now()
+                };
+                
+                this.undoStack.push(state);
+                
+                // Limit stack size
+                if (this.undoStack.length > this.maxUndoSteps) {
+                    this.undoStack.shift();
+                }
+                
+                // Clear redo stack on new action
+                this.redoStack = [];
+                
+                console.log(`💾 Saved state for undo: ${actionName} (${this.undoStack.length} states)`);
+            }
+            
+            undo() {
+                if (this.undoStack.length === 0) {
+                    console.log('Nothing to undo');
+                    return;
+                }
+                
+                // Save current state to redo stack
+                const currentState = {
+                    tasks: JSON.parse(JSON.stringify(this.tasks)),
+                    actionName: 'Redo point',
+                    timestamp: Date.now()
+                };
+                this.redoStack.push(currentState);
+                
+                // Restore previous state
+                const previousState = this.undoStack.pop();
+                this.tasks = previousState.tasks;
+                
+                this.saveTasks();
+                this.render();
+                
+                this.showToast(`↶ Undid: ${previousState.actionName}`, 2000);
+                console.log(`↶ Undo: ${previousState.actionName}`);
+            }
+            
+            redo() {
+                if (this.redoStack.length === 0) {
+                    console.log('Nothing to redo');
+                    return;
+                }
+                
+                // Save current state to undo stack
+                const currentState = {
+                    tasks: JSON.parse(JSON.stringify(this.tasks)),
+                    actionName: 'Undo point',
+                    timestamp: Date.now()
+                };
+                this.undoStack.push(currentState);
+                
+                // Restore redo state
+                const redoState = this.redoStack.pop();
+                this.tasks = redoState.tasks;
+                
+                this.saveTasks();
+                this.render();
+                
+                this.showToast(`↷ Redid action`, 2000);
+                console.log(`↷ Redo action`);
+            }
+            
+            // UX Enhancement: Toast notification for undo/redo
+            showToast(message, duration = 2000) {
+                // Create toast element
+                const toast = document.createElement('div');
+                toast.textContent = message;
+                toast.style.cssText = `
+                    position: fixed;
+                    bottom: 24px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: var(--bg-card);
+                    color: var(--text-primary);
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    border: 2px solid var(--accent-color);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    z-index: 10000;
+                    font-weight: 600;
+                    animation: slideUp 0.3s ease;
+                `;
+                
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    toast.style.animation = 'slideDown 0.3s ease';
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            }
+
+            // Cross-Tab Synchronization
+            // This ensures that changes made in one tab are reflected in all other tabs
+            setupStorageSync() {
+                // Listen for storage changes from other tabs
+                window.addEventListener('storage', (e) => {
+                    // Only respond to changes to our tasks data
+                    if (e.key === 'tasks' && e.newValue !== null) {
+                        console.log('🔄 Detected task changes from another tab, syncing...');
+                        
+                        try {
+                            // Check if the data is compressed
+                            const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
+                            let newTasks;
+                            
+                            if (isCompressed) {
+                                // Decompress the data first
+                                const decompressed = LZString.decompressFromUTF16(e.newValue);
+                                newTasks = JSON.parse(decompressed);
+                            } else {
+                                // Parse uncompressed data
+                                newTasks = JSON.parse(e.newValue);
+                            }
+                            
+                            // Update our tasks array
+                            this.tasks = newTasks;
+                            
+                            // Re-render the UI to show the updated tasks
+                            this.render();
+                            
+                            // Show a subtle notification to the user
+                            this.showSyncNotification();
+                        } catch (error) {
+                            console.error('Failed to sync tasks from another tab:', error);
+                            // Reload from storage using the proper loadTasks method
+                            this.tasks = this.loadTasks();
+                            this.render();
+                        }
+                    }
+                });
+                
+                // Also listen for visibility changes to catch any missed updates
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        // Tab became visible, check for updates
+                        const currentStored = localStorage.getItem('tasks');
+                        
+                        // Only reload if data exists and might have changed
+                        if (currentStored) {
+                            try {
+                                const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
+                                let loadedTasks;
+                                
+                                if (isCompressed) {
+                                    // Decompress the data first
+                                    const decompressed = LZString.decompressFromUTF16(currentStored);
+                                    loadedTasks = JSON.parse(decompressed);
+                                } else {
+                                    // Uncompressed data
+                                    loadedTasks = JSON.parse(currentStored);
+                                }
+                                
+                                // Compare task counts or IDs to detect changes
+                                const currentTaskIds = this.tasks.map(t => t.id).sort().join(',');
+                                const loadedTaskIds = loadedTasks.map(t => t.id).sort().join(',');
+                                
+                                if (currentTaskIds !== loadedTaskIds || this.tasks.length !== loadedTasks.length) {
+                                    console.log('🔄 Tab became visible, reloading updated tasks...');
+                                    this.tasks = loadedTasks;
+                                    this.render();
+                                }
+                            } catch (e) {
+                                console.error('Failed to check for updates:', e);
+                                // If parsing fails, reload from scratch
+                                this.tasks = this.loadTasks();
+                                this.render();
+                            }
+                        }
+                    }
+                });
+                
+                // Performance Optimization: Ensure save on page close
+                // Saves any pending changes immediately before page unload
+                window.addEventListener('beforeunload', () => {
+                    if (this.pendingSave) {
+                        console.log('💾 Saving pending changes before page close...');
+                        this.saveTasks(true); // Immediate save
+                    }
+                });
+            }
+
+            // Show a subtle notification when data syncs from another tab
+            showSyncNotification() {
+                const notification = document.createElement('div');
+                notification.className = 'sync-notification';
+                notification.innerHTML = '🔄 Tasks updated from another tab';
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: #4CAF50;
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    z-index: 10000;
+                    font-size: 14px;
+                    animation: slideIn 0.3s ease-out;
+                `;
+                
+                document.body.appendChild(notification);
+                
+                // Remove after 3 seconds
+                setTimeout(() => {
+                    notification.style.animation = 'slideOut 0.3s ease-out';
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+            }
+
+            // IndexedDB Helper Functions
+            // Security Note: Directory handles are stored locally in browser's IndexedDB
+            // - Only this website can access them (origin-isolated)
+            // - User must explicitly grant folder permission first
+            // - Browser can revoke access at any time for security
+            // - No data is transmitted over the network
+            
+            async openDB() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, this.dbVersion);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => resolve(request.result);
+                    
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('fileHandles')) {
+                            db.createObjectStore('fileHandles');
+                        }
+                    };
+                });
+            }
+
+            async saveDirectoryHandle(handle) {
+                try {
+                    const db = await this.openDB();
+                    const transaction = db.transaction(['fileHandles'], 'readwrite');
+                    const store = transaction.objectStore('fileHandles');
+                    await store.put(handle, 'autoBackupDirectory');
+                    db.close();
+                } catch (err) {
+                    console.error('Failed to save directory handle:', err);
+                }
+            }
+
+            async getDirectoryHandle() {
+                try {
+                    const db = await this.openDB();
+                    const transaction = db.transaction(['fileHandles'], 'readonly');
+                    const store = transaction.objectStore('fileHandles');
+                    const request = store.get('autoBackupDirectory');
+                    
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject(request.error);
+                    });
+                } catch (err) {
+                    console.error('Failed to get directory handle:', err);
+                    return null;
+                }
+            }
+
+            async removeDirectoryHandle() {
+                try {
+                    const db = await this.openDB();
+                    const transaction = db.transaction(['fileHandles'], 'readwrite');
+                    const store = transaction.objectStore('fileHandles');
+                    await store.delete('autoBackupDirectory');
+                    db.close();
+                } catch (err) {
+                    console.error('Failed to remove directory handle:', err);
+                }
+            }
+
+            async restoreDirectoryHandle() {
+                try {
+                    const handle = await this.getDirectoryHandle();
+                    if (!handle) return;
+
+                    // Verify we still have permission
+                    const permission = await handle.queryPermission({ mode: 'readwrite' });
+                    if (permission === 'granted') {
+                        this.directoryHandle = handle;
+                        this.autoBackupDirName = handle.name;
+                        localStorage.setItem('autoBackupDirName', this.autoBackupDirName);
+                    } else {
+                        // Try to request permission again
+                        const newPermission = await handle.requestPermission({ mode: 'readwrite' });
+                        if (newPermission === 'granted') {
+                            this.directoryHandle = handle;
+                            this.autoBackupDirName = handle.name;
+                            localStorage.setItem('autoBackupDirName', this.autoBackupDirName);
+                        } else {
+                            // Permission denied, clear everything
+                            await this.removeDirectoryHandle();
+                            this.directoryHandle = null;
+                            this.autoBackupDirName = null;
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to restore directory handle:', err);
+                    // If restoration fails, clear the stored handle
+                    await this.removeDirectoryHandle();
+                    this.directoryHandle = null;
+                }
+            }
+
+            setupEventListeners() {
+                // Add task
+                document.getElementById('add-task-btn').addEventListener('click', () => this.addTask());
+                document.getElementById('task-title').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.addTask();
+                    }
+                });
+
+                // Filters
+                document.getElementById('filter-select').addEventListener('change', (e) => {
+                    this.currentFilter = e.target.value;
+                    this.resetVirtualScroll(); // Reset pagination when filter changes
+                    this.render();
+                });
+
+                // Search with debounce (UX Enhancement)
+                let searchTimeout;
+                document.getElementById('task-search').addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    const value = e.target.value;
+                    
+                    // Show/hide clear button
+                    const clearBtn = document.getElementById('clear-search-btn');
+                    clearBtn.style.display = value ? 'block' : 'none';
+                    
+                    // Debounce search (200ms)
+                    searchTimeout = setTimeout(() => {
+                        this.searchTerm = value;
+                        this.resetVirtualScroll();
+                        this.render();
+                    }, 200);
+                });
+                
+                // Clear search button
+                document.getElementById('clear-search-btn').addEventListener('click', () => {
+                    document.getElementById('task-search').value = '';
+                    document.getElementById('clear-search-btn').style.display = 'none';
+                    this.searchTerm = '';
+                    this.resetVirtualScroll();
+                    this.render();
+                });
+
+                // Sort (UX Enhancement: Enable drag mode for custom sort)
+                document.getElementById('sort-select').addEventListener('change', (e) => {
+                    this.sortMethod = e.target.value;
+                    
+                    // Toggle custom sort mode (enable/disable drag & drop)
+                    const taskList = document.getElementById('task-list');
+                    if (this.sortMethod === 'custom') {
+                        taskList.classList.add('custom-sort-mode');
+                    } else {
+                        taskList.classList.remove('custom-sort-mode');
+                    }
+                    
+                    this.resetVirtualScroll(); // Reset pagination when sort changes
+                    this.render();
+                });
+
+                // Clear completed
+                document.getElementById('clear-completed-btn').addEventListener('click', () => this.clearCompleted());
+
+                // Export
+                document.getElementById('export-btn').addEventListener('click', () => this.showExportModal());
+                document.getElementById('close-modal').addEventListener('click', () => this.closeExportModal());
+                document.getElementById('close-modal-btn').addEventListener('click', () => this.closeExportModal());
+                document.getElementById('copy-export-btn').addEventListener('click', () => this.copyExportToClipboard());
+                
+                // Close modal on outside click
+                document.getElementById('export-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'export-modal') {
+                        this.closeExportModal();
+                    }
+                });
+
+                // Backup and Import
+                document.getElementById('backup-btn').addEventListener('click', () => this.backupTasks());
+                document.getElementById('import-btn').addEventListener('click', () => {
+                    document.getElementById('import-file-input').click();
+                });
+                document.getElementById('import-file-input').addEventListener('change', (e) => this.importTasks(e));
+
+                // Auto-backup toggle
+                document.getElementById('auto-backup-btn').addEventListener('click', () => this.toggleAutoBackup());
+                
+                // UX Enhancement: Enable notifications button
+                document.getElementById('enable-notifications-btn').addEventListener('click', () => this.requestNotificationPermission());
+                
+                // UX Enhancement: Statistics modal
+                document.getElementById('view-stats-btn').addEventListener('click', () => this.showStatsModal());
+                document.getElementById('close-stats-modal').addEventListener('click', () => this.closeStatsModal());
+                document.getElementById('close-stats-btn').addEventListener('click', () => this.closeStatsModal());
+                
+                // Close stats modal on outside click
+                document.getElementById('stats-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'stats-modal') {
+                        this.closeStatsModal();
+                    }
+                });
+                
+                // Storage stat click handler
+                const storageStatEl = document.getElementById('stat-storage');
+                if (storageStatEl) {
+                    storageStatEl.addEventListener('click', (e) => {
+                        console.log('🖱️ Storage stat clicked!');
+                        const storageInfo = this.getStorageUsage();
+                        this.showStorageModal(storageInfo);
+                    });
+                    console.log('✅ Storage stat click handler attached');
+                } else {
+                    console.error('❌ Storage stat element not found during setup');
+                }
+                
+                // Storage modal handlers
+                document.getElementById('close-storage-modal').addEventListener('click', () => this.closeStorageModal());
+                document.getElementById('close-storage-btn').addEventListener('click', () => this.closeStorageModal());
+                document.getElementById('copy-storage-btn').addEventListener('click', () => this.copyStorageToClipboard());
+                
+                // Close storage modal on outside click
+                document.getElementById('storage-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'storage-modal') {
+                        this.closeStorageModal();
+                    }
+                });
+                
+                // File storage setup wizard
+                document.getElementById('close-setup-wizard').addEventListener('click', () => this.closeFileStorageSetupWizard());
+                document.getElementById('file-storage-setup-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'file-storage-setup-modal') {
+                        this.closeFileStorageSetupWizard();
+                    }
+                });
+                
+                // Storage settings
+                document.getElementById('storage-settings-btn').addEventListener('click', () => this.showStorageSettings());
+                document.getElementById('close-storage-settings').addEventListener('click', () => this.closeStorageSettings());
+                document.getElementById('switch-to-file-btn').addEventListener('click', () => this.switchToFileStorage());
+                document.getElementById('switch-to-browser-btn').addEventListener('click', () => this.switchToBrowserStorage());
+                document.getElementById('change-file-location-btn').addEventListener('click', () => this.changeFileLocation());
+                document.getElementById('clear-file-storage-btn').addEventListener('click', () => this.clearFileStorage());
+                document.getElementById('storage-settings-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'storage-settings-modal') {
+                        this.closeStorageSettings();
+                    }
+                });
+            }
+
+            loadTasks() {
+                // NOTE: This is a sync method for constructor. Migration happens in init()
+                try {
+                    const stored = localStorage.getItem('tasks');
+                    if (!stored) return [];
+                    
+                    const isCompressed = localStorage.getItem('tasksCompressed') === 'true';
+                    
+                    let allTasks;
+                    if (isCompressed) {
+                        // Decompress using LZ-String
+                        const decompressed = LZString.decompressFromUTF16(stored);
+                        allTasks = JSON.parse(decompressed);
+                        console.log(`📦 Loaded ${allTasks.length} tasks (decompressed from localStorage)`);
+                    } else {
+                        // Legacy uncompressed data
+                        allTasks = JSON.parse(stored);
+                        console.log(`📦 Loaded ${allTasks.length} tasks (uncompressed - will compress on next save)`);
+                    }
+                    
+                    // For initial load, just return all tasks (including archived)
+                    // Migration will happen in init()
+                    
+                    // Initialize all tasks as collapsed by default
+                    allTasks.forEach(task => {
+                        if (!(task.id in this.collapsedTasks)) {
+                            this.collapsedTasks[task.id] = true;
+                        }
+                    });
+                    
+                    return allTasks;
+                } catch (e) {
+                    console.error('Failed to load tasks:', e);
+                    console.log('🔄 Attempting recovery from backup or returning empty array...');
+                    return [];
+                }
+            }
+            
+            async autoMigrateArchivedTasks() {
+                // Auto-migrate archived tasks found in main task list
+                const archivedTasks = this.tasks.filter(t => t.archived && t.archivedAt);
+                
+                if (archivedTasks.length === 0) {
+                    return;
+                }
+                
+                console.log(`🔄 Auto-migrating ${archivedTasks.length} archived tasks to monthly archive files...`);
+                
+                for (const task of archivedTasks) {
+                    await this.moveTaskToArchive(task);
+                    // Remove from main tasks array
+                    this.tasks = this.tasks.filter(t => t.id !== task.id);
+                }
+                
+                console.log(`✅ Auto-migrated ${archivedTasks.length} archived tasks successfully`);
+                
+                // Save the cleaned task list
+                this.saveTasks(true); // immediate save
+            }
+
+            // Performance Optimization: Debounced Writes (file or localStorage)
+            // Reduces writes by 80-95% by batching rapid changes
+            saveTasks(immediate = false) {
+                // Clear any pending save
+                if (this.saveTimeout) {
+                    clearTimeout(this.saveTimeout);
+                }
+                
+                // Mark that we have pending changes
+                this.pendingSave = true;
+                
+                // If immediate save requested (e.g., before page unload), save now
+                if (immediate) {
+                    if (this.useFileStorage && this.fileStorageReady) {
+                        this.saveToFile();
+                    } else {
+                        this.saveToLocalStorage();
+                    }
+                    this.pendingSave = false;
+                    return;
+                }
+                
+                // Otherwise, debounce the save (wait 500ms after last change)
+                this.saveTimeout = setTimeout(() => {
+                    if (this.useFileStorage && this.fileStorageReady) {
+                        this.saveToFile();
+                    } else {
+                        this.saveToLocalStorage();
+                    }
+                    this.pendingSave = false;
+                }, 500); // Wait 500ms after last change
+            }
+            
+            // Performance Optimization: Compressed localStorage writes
+            // Uses LZ-String for 3-5x better compression
+            saveToLocalStorage() {
+                try {
+                    // Filter out archived tasks - they go to separate archive files
+                    const nonArchivedTasks = this.tasks.filter(t => !t.archived);
+                    
+                    const json = JSON.stringify(nonArchivedTasks);
+                    const compressed = LZString.compressToUTF16(json);
+                    
+                    localStorage.setItem('tasks', compressed);
+                    localStorage.setItem('tasksCompressed', 'true');
+                    
+                    // Log compression ratio for performance tracking
+                    const ratio = ((compressed.length / json.length) * 100).toFixed(1);
+                    console.log(`💾 Saved ${nonArchivedTasks.length} tasks (compressed to ${ratio}% of original size)`);
+                } catch (e) {
+                    console.error('Compression failed, saving uncompressed:', e);
+                    // Fallback to uncompressed if compression fails
+                    const nonArchivedTasks = this.tasks.filter(t => !t.archived);
+                    localStorage.setItem('tasks', JSON.stringify(nonArchivedTasks));
+                    localStorage.setItem('tasksCompressed', 'false');
+                }
+            }
+            
+            // ==================== FILE-BASED STORAGE SYSTEM ====================
+            // Saves tasks to a local file instead of localStorage
+            
+            async saveToFile() {
+                if (!this.taskFileHandle || !this.fileStorageReady) {
+                    console.log('⚠️ File storage not ready, falling back to localStorage');
+                    this.saveToLocalStorage();
+                    return;
+                }
+                
+                try {
+                    // Check permission (don't request here, it should already be granted)
+                    const permission = await this.taskFileHandle.queryPermission({ mode: 'readwrite' });
+                    if (permission !== 'granted') {
+                        console.warn('File permission not granted, falling back to localStorage');
+                        this.saveToLocalStorage();
+                        return;
+                    }
+                    
+                    // Filter out archived tasks - they go to separate archive files
+                    const nonArchivedTasks = this.tasks.filter(t => !t.archived);
+                    
+                    // Prepare data
+                    const data = {
+                        version: '1.0',
+                        timestamp: new Date().toISOString(),
+                        tasks: nonArchivedTasks
+                    };
+                    
+                    // Write to file
+                    const writable = await this.taskFileHandle.createWritable();
+                    await writable.write(JSON.stringify(data, null, 2));
+                    await writable.close();
+                    
+                    console.log(`📄 Saved ${nonArchivedTasks.length} tasks to file`);
+                    this.updateFileStorageIndicator(true);
+                    
+                    // Also save minimal data to localStorage as backup (just metadata)
+                    localStorage.setItem('lastFileSaveTime', new Date().toISOString());
+                    localStorage.setItem('taskCount', nonArchivedTasks.length.toString());
+                    
+                } catch (e) {
+                    console.error('Failed to save to file:', e);
+                    this.updateFileStorageIndicator(false);
+                    // Fallback to localStorage
+                    this.saveToLocalStorage();
+                }
+            }
+            
+            async loadFromFile() {
+                if (!this.taskFileHandle || !this.fileStorageReady) {
+                    console.log('⚠️ File storage not ready, loading from localStorage');
+                    return [];
+                }
+                
+                try {
+                    const file = await this.taskFileHandle.getFile();
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    
+                    // Separate archived and non-archived tasks
+                    const allTasks = data.tasks || [];
+                    const archivedTasks = allTasks.filter(t => t.archived && t.archivedAt);
+                    const nonArchivedTasks = allTasks.filter(t => !t.archived);
+                    
+                    console.log(`📄 Loaded ${nonArchivedTasks.length} tasks from file (saved: ${new Date(data.timestamp).toLocaleString()})`);
+                    
+                    // Auto-migrate archived tasks if found
+                    if (archivedTasks.length > 0) {
+                        console.log(`🔄 Found ${archivedTasks.length} archived tasks in main file - auto-migrating...`);
+                        for (const task of archivedTasks) {
+                            await this.moveTaskToArchive(task);
+                        }
+                        console.log(`✅ Auto-migrated ${archivedTasks.length} archived tasks to monthly archive files`);
+                        
+                        // Save the cleaned task list (without archived tasks)
+                        this.tasks = nonArchivedTasks;
+                        await this.saveToFile();
+                    }
+                    
+                    this.updateFileStorageIndicator(true);
+                    return nonArchivedTasks;
+                    
+                } catch (e) {
+                    console.error('Failed to load from file:', e);
+                    this.updateFileStorageIndicator(false);
+                    return [];
+                }
+            }
+            
+            async setupFileStorage(createNew = false) {
+                try {
+                    // Check if File System Access API is supported
+                    if (!('showDirectoryPicker' in window)) {
+                        throw new Error('File System Access API not supported');
+                    }
+                    
+                    // Let user select a directory
+                    const dirHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite',
+                        startIn: 'documents'
+                    });
+                    
+                    // CRITICAL: Request permission immediately while user gesture is active
+                    const permission = await dirHandle.queryPermission({ mode: 'readwrite' });
+                    if (permission !== 'granted') {
+                        const granted = await dirHandle.requestPermission({ mode: 'readwrite' });
+                        if (granted !== 'granted') {
+                            alert('⚠️ Folder permission denied. Cannot use file storage.');
+                            return false;
+                        }
+                    }
+                    
+                    // Try to get tasks.json from the directory
+                    let fileHandle;
+                    let existingTasks = null;
+                    
+                    try {
+                        // Check if tasks.json already exists
+                        fileHandle = await dirHandle.getFileHandle('tasks.json', { create: false });
+                        
+                        // File exists, try to read it
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        
+                        if (text.trim()) {
+                            try {
+                                const data = JSON.parse(text);
+                                if (data.tasks && data.tasks.length > 0) {
+                                    // Filter out archived tasks
+                                    existingTasks = data.tasks.filter(t => !t.archived);
+                                    const totalTasks = data.tasks.length;
+                                    const archivedCount = totalTasks - existingTasks.length;
+                                    
+                                    let message = `Found existing tasks.json with ${existingTasks.length} tasks!`;
+                                    if (archivedCount > 0) {
+                                        message += `\n(${archivedCount} archived tasks will remain in archive files)`;
+                                    }
+                                    message += '\n\nDo you want to load these tasks?\n\nYes = Load tasks from file\nNo = Keep current tasks and overwrite file';
+                                    
+                                    const confirmed = confirm(message);
+                                    if (confirmed) {
+                                        this.tasks = existingTasks;
+                                        console.log(`✅ Loaded ${this.tasks.length} tasks from existing file`);
+                                        // Initialize collapsed state
+                                        this.tasks.forEach(task => {
+                                            if (!(task.id in this.collapsedTasks)) {
+                                                this.collapsedTasks[task.id] = true;
+                                            }
+                                        });
+                                    } else {
+                                        console.log(`📝 Keeping current ${this.tasks.length} tasks, will overwrite file`);
+                                    }
+                                }
+                            } catch (parseError) {
+                                console.warn('File exists but could not parse JSON:', parseError);
+                            }
+                        }
+                    } catch (e) {
+                        // tasks.json doesn't exist, will create it
+                        console.log('tasks.json not found, will create new file');
+                        fileHandle = await dirHandle.getFileHandle('tasks.json', { create: true });
+                    }
+                    
+                    this.taskFileHandle = fileHandle;
+                    this.taskDirectoryHandle = dirHandle; // Save directory handle too
+                    
+                    // Save both handles to IndexedDB for persistence
+                    await this.saveFileHandle(fileHandle, 'taskFile');
+                    await this.saveFileHandle(dirHandle, 'taskDirectory');
+                    
+                    this.fileStorageReady = true;
+                    this.useFileStorage = true;
+                    localStorage.setItem('useFileStorage', 'true');
+                    localStorage.setItem('taskDirectoryName', dirHandle.name);
+                    
+                    // Write current tasks to file immediately (permission already granted)
+                    await this.saveToFile();
+                    
+                    console.log('✅ File storage configured');
+                    return true;
+                    
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        console.log('Folder selection cancelled');
+                    } else {
+                        console.error('Failed to setup file storage:', e);
+                    }
+                    return false;
+                }
+            }
+            
+            async restoreFileStorageHandle() {
+                try {
+                    // Try to restore directory handle first (new method)
+                    const dirHandle = await this.getFileHandle('taskDirectory');
+                    if (dirHandle && dirHandle.queryPermission) {
+                        // Verify directory permission
+                        const dirPermission = await dirHandle.queryPermission({ mode: 'readwrite' });
+                        if (dirPermission === 'granted') {
+                            // Try to get tasks.json from directory
+                            try {
+                                const fileHandle = await dirHandle.getFileHandle('tasks.json', { create: false });
+                                this.taskDirectoryHandle = dirHandle;
+                                this.taskFileHandle = fileHandle;
+                                this.fileStorageReady = true;
+                                console.log('✅ File storage handle restored (directory method)');
+                                return true;
+                            } catch (e) {
+                                console.warn('Directory found but tasks.json missing, will create it');
+                                const fileHandle = await dirHandle.getFileHandle('tasks.json', { create: true });
+                                this.taskDirectoryHandle = dirHandle;
+                                this.taskFileHandle = fileHandle;
+                                this.fileStorageReady = true;
+                                return true;
+                            }
+                        }
+                    }
+                    
+                    // Fallback: Try old file handle method (for backward compatibility)
+                    const handle = await this.getFileHandle('taskFile');
+                    if (!handle) {
+                        console.log('⚠️ No file handle found in storage');
+                        return false;
+                    }
+                    
+                    // Check if it's a valid file handle
+                    if (!handle.queryPermission) {
+                        console.warn('⚠️ Invalid file handle, clearing storage');
+                        await this.removeFileHandle('taskFile');
+                        await this.removeFileHandle('taskDirectory');
+                        return false;
+                    }
+                    
+                    // Verify we still have permission
+                    const permission = await handle.queryPermission({ mode: 'readwrite' });
+                    if (permission === 'granted') {
+                        this.taskFileHandle = handle;
+                        this.fileStorageReady = true;
+                        console.log('✅ File storage handle restored (file method)');
+                        return true;
+                    } else {
+                        console.warn('⚠️ File storage permission not granted');
+                        this.fileStorageReady = false;
+                        return false;
+                    }
+                } catch (e) {
+                    console.error('Failed to restore file handle:', e);
+                    this.fileStorageReady = false;
+                    return false;
+                }
+            }
+            
+            async saveFileHandle(handle, key) {
+                try {
+                    const db = await this.openDB();
+                    const tx = db.transaction('fileHandles', 'readwrite');
+                    const store = tx.objectStore('fileHandles');
+                    store.put(handle, key);
+                    
+                    return new Promise((resolve, reject) => {
+                        tx.oncomplete = () => {
+                            db.close();
+                            resolve();
+                        };
+                        tx.onerror = () => {
+                            db.close();
+                            reject(tx.error);
+                        };
+                    });
+                } catch (e) {
+                    console.error('Failed to save file handle:', e);
+                    throw e;
+                }
+            }
+            
+            async getFileHandle(key) {
+                try {
+                    const db = await this.openDB();
+                    const tx = db.transaction('fileHandles', 'readonly');
+                    const store = tx.objectStore('fileHandles');
+                    const request = store.get(key);
+                    
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => {
+                            db.close();
+                            resolve(request.result);
+                        };
+                        request.onerror = () => {
+                            db.close();
+                            reject(request.error);
+                        };
+                    });
+                } catch (e) {
+                    console.error('Failed to get file handle:', e);
+                    return null;
+                }
+            }
+            
+            async removeFileHandle(key) {
+                try {
+                    const db = await this.openDB();
+                    const tx = db.transaction('fileHandles', 'readwrite');
+                    const store = tx.objectStore('fileHandles');
+                    store.delete(key);
+                    
+                    return new Promise((resolve, reject) => {
+                        tx.oncomplete = () => {
+                            db.close();
+                            resolve();
+                        };
+                        tx.onerror = () => {
+                            db.close();
+                            reject(tx.error);
+                        };
+                    });
+                } catch (e) {
+                    console.error('Failed to remove file handle:', e);
+                }
+            }
+            
+            // ==================== MONTHLY ARCHIVE FILE SYSTEM ====================
+            
+            getArchiveFileName(date) {
+                // Returns filename like "archive-2025-12.json" for December 2025
+                const d = new Date(date);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                return `archive-${year}-${month}.json`;
+            }
+            
+            async moveTaskToArchive(task) {
+                // Support both file storage and localStorage-based archive storage
+                if (this.taskDirectoryHandle) {
+                    // File storage mode - write to file
+                    try {
+                        const archiveFileName = this.getArchiveFileName(task.archivedAt);
+                        console.log(`📦 Archiving task to ${archiveFileName}`);
+                        
+                        // Get or create the archive file for this month
+                        let archiveFileHandle;
+                        let existingArchives = [];
+                        
+                        try {
+                            archiveFileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                            // File exists, read it
+                            const file = await archiveFileHandle.getFile();
+                            const text = await file.text();
+                            if (text.trim()) {
+                                const data = JSON.parse(text);
+                                existingArchives = data.tasks || [];
+                            }
+                        } catch (e) {
+                            // File doesn't exist, will create it
+                            archiveFileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: true });
+                        }
+                        
+                        // Add task to archives
+                        existingArchives.push(task);
+                        
+                        // Write back to file
+                        const archiveData = {
+                            version: '1.0',
+                            month: archiveFileName.replace('archive-', '').replace('.json', ''),
+                            timestamp: new Date().toISOString(),
+                            tasks: existingArchives
+                        };
+                        
+                        const writable = await archiveFileHandle.createWritable();
+                        await writable.write(JSON.stringify(archiveData, null, 2));
+                        await writable.close();
+                        
+                        console.log(`✅ Task archived to ${archiveFileName} (${existingArchives.length} tasks in file)`);
+                        
+                    } catch (e) {
+                        console.error('Failed to move task to archive file:', e);
+                        // Fallback to localStorage archive
+                        this.moveTaskToLocalStorageArchive(task);
+                    }
+                } else {
+                    // localStorage mode - use localStorage for archives
+                    this.moveTaskToLocalStorageArchive(task);
+                }
+            }
+            
+            moveTaskToLocalStorageArchive(task) {
+                try {
+                    const archiveFileName = this.getArchiveFileName(task.archivedAt);
+                    console.log(`📦 Archiving task to localStorage: ${archiveFileName}`);
+                    
+                    // Get existing archives for this month
+                    let existingArchives = [];
+                    const storageKey = `archive_${archiveFileName}`;
+                    const stored = localStorage.getItem(storageKey);
+                    
+                    if (stored) {
+                        try {
+                            const data = JSON.parse(stored);
+                            existingArchives = data.tasks || [];
+                        } catch (e) {
+                            console.warn('Could not parse existing archive data:', e);
+                        }
+                    }
+                    
+                    // Add task to archives
+                    existingArchives.push(task);
+                    
+                    // Save back to localStorage
+                    const archiveData = {
+                        version: '1.0',
+                        month: archiveFileName.replace('archive-', '').replace('.json', ''),
+                        timestamp: new Date().toISOString(),
+                        tasks: existingArchives
+                    };
+                    
+                    localStorage.setItem(storageKey, JSON.stringify(archiveData));
+                    console.log(`✅ Task archived to localStorage: ${archiveFileName} (${existingArchives.length} tasks)`);
+                    
+                } catch (e) {
+                    console.error('Failed to move task to localStorage archive:', e);
+                }
+            }
+            
+            async loadArchivedTasksFromMonth(year, month) {
+                const monthStr = String(month).padStart(2, '0');
+                const archiveFileName = `archive-${year}-${monthStr}.json`;
+                
+                // Check storage mode and use appropriate method
+                if (this.useFileStorage && this.taskDirectoryHandle) {
+                    // File storage mode - only check files
+                    try {
+                        const fileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        
+                        console.log(`📂 Loaded ${data.tasks.length} archived tasks from file: ${archiveFileName}`);
+                        return data.tasks || [];
+                    } catch (e) {
+                        // File doesn't exist - return empty (don't spam console)
+                        return [];
+                    }
+                } else {
+                    // localStorage mode - only check localStorage
+                    try {
+                        const storageKey = `archive_${archiveFileName}`;
+                        const stored = localStorage.getItem(storageKey);
+                        
+                        if (stored) {
+                            const data = JSON.parse(stored);
+                            console.log(`📂 Loaded ${data.tasks.length} archived tasks from localStorage: ${archiveFileName}`);
+                            return data.tasks || [];
+                        } else {
+                            return [];
+                        }
+                    } catch (e) {
+                        console.error(`Error loading archive ${archiveFileName}:`, e);
+                        return [];
+                    }
+                }
+            }
+            
+            async loadPastYearArchives() {
+                try {
+                    const now = new Date();
+                    
+                    // Create array of promises to load all months in parallel
+                    const loadPromises = [];
+                    
+                    for (let i = 0; i < 12; i++) {
+                        const date = new Date(now);
+                        date.setMonth(date.getMonth() - i);
+                        const year = date.getFullYear();
+                        const month = date.getMonth() + 1;
+                        const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+                        
+                        // Load all months in parallel
+                        loadPromises.push(
+                            this.loadArchivedTasksFromMonth(year, month)
+                                .then(archives => ({ archives, monthKey }))
+                        );
+                    }
+                    
+                    // Wait for all months to load
+                    const results = await Promise.all(loadPromises);
+                    
+                    // Combine results
+                    let allArchives = [];
+                    const monthsWithArchives = [];
+                    
+                    for (const result of results) {
+                        if (result.archives.length > 0) {
+                            allArchives = allArchives.concat(result.archives);
+                            monthsWithArchives.push(result.monthKey);
+                        }
+                    }
+                    
+                    // Log summary
+                    if (allArchives.length > 0) {
+                        console.log(`📂 Loaded ${allArchives.length} archived tasks from ${monthsWithArchives.length} month(s): ${monthsWithArchives.join(', ')}`);
+                    } else {
+                        console.log(`📂 No archived tasks found in past 12 months`);
+                    }
+                    
+                    return allArchives;
+                    
+                } catch (e) {
+                    console.error('Failed to load past year archives:', e);
+                    return [];
+                }
+            }
+            
+            async searchArchives(searchTerm) {
+                const archives = await this.loadPastYearArchives();
+                
+                if (!searchTerm) return archives;
+                
+                const term = searchTerm.toLowerCase();
+                return archives.filter(task => 
+                    task.title.toLowerCase().includes(term) ||
+                    task.content.toLowerCase().includes(term) ||
+                    task.category.toLowerCase().includes(term) ||
+                    (task.tags && task.tags.some(tag => tag.toLowerCase().includes(term)))
+                );
+            }
+            
+            // ==================== ARCHIVE MIGRATION UTILITY ====================
+            
+            addTask() {
+                const title = document.getElementById('task-title').value.trim();
+                const content = document.getElementById('task-content').value.trim();
+                const priority = document.getElementById('task-priority').value;
+                const category = document.getElementById('task-category').value.trim();
+                const dueDate = document.getElementById('task-due-date').value; // UX Enhancement: Due dates
+                const tagsInput = document.getElementById('task-tags').value.trim(); // UX Enhancement: Tags
+
+                if (!title) {
+                    alert('Please enter a task title');
+                    return;
+                }
+                
+                // Parse tags (split by comma, trim, remove duplicates, convert to lowercase)
+                const tags = tagsInput 
+                    ? [...new Set(tagsInput.split(',').map(t => t.trim().toLowerCase()).filter(t => t))]
+                    : [];
+
+                const now = new Date().toISOString();
+                const task = {
+                    id: Date.now(),
+                    title,
+                    content,
+                    completed: false,
+                    archived: false,
+                    priority,
+                    category: category || 'General',
+                    dueDate: dueDate || null, // UX Enhancement: Store due date
+                    tags: tags, // UX Enhancement: Store tags array
+                    subtasks: [],
+                    createdAt: now,
+                    updatedAt: now
+                };
+
+                this.tasks.push(task);
+                // Set new tasks as collapsed by default
+                this.collapsedTasks[task.id] = true;
+                this.saveTasks();
+                this.updateTagSuggestions(); // Update tag autocomplete
+                this.render();
+
+                // Clear form
+                document.getElementById('task-title').value = '';
+                document.getElementById('task-content').value = '';
+                document.getElementById('task-category').value = 'Work';
+                document.getElementById('task-priority').value = 'medium';
+                document.getElementById('task-due-date').value = ''; // UX Enhancement: Clear due date
+                document.getElementById('task-tags').value = ''; // UX Enhancement: Clear tags
+            }
+
+            toggleTask(id) {
+                const task = this.tasks.find(t => t.id === id);
+                if (task) {
+                    task.completed = !task.completed;
+                    task.updatedAt = new Date().toISOString();
+                    
+                    if (task.completed) {
+                        task.completedAt = new Date().toISOString();
+                    } else {
+                        task.completedAt = null;
+                    }
+                    
+                    this.saveTasks();
+                    
+                    // Performance Optimization: Granular update instead of full re-render
+                    this.updateTaskDOM(id);
+                    this.updateStats();
+                }
+            }
+
+            deleteTask(id) {
+                if (confirm('Are you sure you want to delete this task?')) {
+                    this.tasks = this.tasks.filter(t => t.id !== id);
+                    delete this.showingSubtasks[id];
+                    delete this.collapsedTasks[id];
+                    this.saveTasks();
+                    this.render();
+                }
+            }
+
+            async copyTaskId(id, event) {
+                try {
+                    await navigator.clipboard.writeText(id.toString());
+                    
+                    // Visual feedback - flash green
+                    const taskIdElement = event.currentTarget;
+                    taskIdElement.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        taskIdElement.classList.remove('copied');
+                    }, 1500);
+                    
+                    console.log(`📋 Copied task ID: ${id}`);
+                } catch (e) {
+                    console.error('Failed to copy task ID:', e);
+                    // Fallback: select the text
+                    const range = document.createRange();
+                    range.selectNodeContents(event.currentTarget);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+            }
+
+            async archiveTask(id) {
+                const task = this.tasks.find(t => t.id === id);
+                if (task) {
+                    task.archived = true;
+                    task.archivedAt = new Date().toISOString();
+                    
+                    // Always move to monthly archive file (both file storage and localStorage)
+                    await this.moveTaskToArchive(task);
+                    
+                    // Remove from main tasks array
+                    this.tasks = this.tasks.filter(t => t.id !== id);
+                    
+                    // Clear archive cache so newly archived task appears when filtering
+                    this.loadedArchives = [];
+                    this.archivesLoaded = false;
+                    
+                    this.saveTasks();
+                    
+                    // Task should be filtered out, do full re-render
+                    await this.render();
+                }
+            }
+
+            async unarchiveTask(id) {
+                // First check if task is in memory
+                let task = this.tasks.find(t => t.id === id);
+                
+                // If not in memory, check loaded archives
+                if (!task && this.loadedArchives.length > 0) {
+                    task = this.loadedArchives.find(t => t.id === id);
+                    if (task) {
+                        // Remove from archive storage
+                        await this.removeTaskFromArchive(task);
+                        // Add back to main tasks
+                        this.tasks.push(task);
+                    }
+                }
+                
+                if (task) {
+                    task.archived = false;
+                    task.archivedAt = null;
+                    this.saveTasks();
+                    
+                    // Clear loaded archives cache to force reload
+                    this.loadedArchives = [];
+                    this.archivesLoaded = false;
+                    
+                    // Full re-render
+                    this.render();
+                }
+            }
+            
+            async removeTaskFromArchive(task) {
+                if (!task.archivedAt) return;
+                
+                const archiveFileName = this.getArchiveFileName(task.archivedAt);
+                const date = new Date(task.archivedAt);
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1;
+                
+                // Try file storage first
+                if (this.taskDirectoryHandle) {
+                    try {
+                        const fileHandle = await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        
+                        // Remove task from archive
+                        data.tasks = data.tasks.filter(t => t.id !== task.id);
+                        data.timestamp = new Date().toISOString();
+                        
+                        // Write back
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(JSON.stringify(data, null, 2));
+                        await writable.close();
+                        
+                        console.log(`✅ Removed task from archive file: ${archiveFileName}`);
+                        return;
+                    } catch (e) {
+                        console.log(`Could not remove from file archive, trying localStorage:`, e);
+                    }
+                }
+                
+                // Try localStorage
+                try {
+                    const storageKey = `archive_${archiveFileName}`;
+                    const stored = localStorage.getItem(storageKey);
+                    
+                    if (stored) {
+                        const data = JSON.parse(stored);
+                        data.tasks = data.tasks.filter(t => t.id !== task.id);
+                        data.timestamp = new Date().toISOString();
+                        
+                        localStorage.setItem(storageKey, JSON.stringify(data));
+                        console.log(`✅ Removed task from localStorage archive: ${archiveFileName}`);
+                    }
+                } catch (e) {
+                    console.error('Failed to remove task from archive:', e);
+                }
+            }
+            
+            // Performance Optimization: Update task archive state in DOM
+            updateTaskArchiveDOM(taskId) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (!task) return;
+                
+                const taskElements = document.querySelectorAll('.task-item');
+                let taskElement = null;
+                
+                for (const el of taskElements) {
+                    const checkbox = el.querySelector('.task-checkbox');
+                    if (checkbox && checkbox.getAttribute('onchange') && 
+                        checkbox.getAttribute('onchange').includes(`${taskId}`)) {
+                        taskElement = el;
+                        break;
+                    }
+                }
+                
+                if (!taskElement) return;
+                
+                // Update archived class
+                if (task.archived) {
+                    taskElement.classList.add('archived');
+                } else {
+                    taskElement.classList.remove('archived');
+                }
+                
+                // Update archived date display
+                const archivedDateEl = taskElement.querySelector('.task-archived-date');
+                if (archivedDateEl) {
+                    if (task.archivedAt) {
+                        const date = new Date(task.archivedAt).toLocaleDateString('en-US', { 
+                            month: 'short', day: 'numeric', year: 'numeric' 
+                        });
+                        archivedDateEl.textContent = `Archived: ${date}`;
+                        archivedDateEl.style.display = '';
+                    } else {
+                        archivedDateEl.textContent = '';
+                        archivedDateEl.style.display = 'none';
+                    }
+                }
+                
+                // Update archive/unarchive button
+                const archiveBtn = taskElement.querySelector('.archive-btn, .unarchive-btn');
+                if (archiveBtn) {
+                    if (task.archived) {
+                        archiveBtn.textContent = '↶ Unarchive';
+                        archiveBtn.className = 'unarchive-btn';
+                        archiveBtn.setAttribute('onclick', `app.unarchiveTask(${taskId})`);
+                    } else {
+                        archiveBtn.textContent = '📦 Archive';
+                        archiveBtn.className = 'archive-btn';
+                        archiveBtn.setAttribute('onclick', `app.archiveTask(${taskId})`);
+                    }
+                }
+                
+                console.log(`✨ Granular archive update: Task ${taskId} (${task.archived ? 'archived' : 'active'})`);
+            }
+
+            startEditTask(id) {
+                this.editingTaskId = id;
+                this.render();
+            }
+
+            saveEditTask(id, newTitle, newContent) {
+                const task = this.tasks.find(t => t.id === id);
+                if (task) {
+                    task.title = newTitle.trim() || task.title;
+                    task.content = newContent.trim();
+                    task.updatedAt = new Date().toISOString();
+                    this.saveTasks();
+                }
+                this.editingTaskId = null;
+                this.render();
+            }
+
+            cancelEditTask() {
+                this.editingTaskId = null;
+                this.render();
+            }
+
+            addSubtask(taskId) {
+                const input = document.getElementById(`subtask-input-${taskId}`);
+                const text = input.value.trim();
+                
+                if (!text) return;
+
+                const task = this.tasks.find(t => t.id === taskId);
+                if (task) {
+                    const subtask = {
+                        id: Date.now(),
+                        text,
+                        completed: false
+                    };
+                    task.subtasks.push(subtask);
+                    task.updatedAt = new Date().toISOString();
+                    this.saveTasks();
+                    
+                    // Performance Optimization: Just re-render this task
+                    // (Full render needed to add new subtask to DOM structure)
+                    this.render();
+                }
+            }
+
+            toggleSubtask(taskId, subtaskId) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (task) {
+                    const subtask = task.subtasks.find(s => s.id === subtaskId);
+                    if (subtask) {
+                        subtask.completed = !subtask.completed;
+                        
+                        if (subtask.completed) {
+                            subtask.completedAt = new Date().toISOString();
+                        } else {
+                            subtask.completedAt = null;
+                        }
+                        
+                        task.updatedAt = new Date().toISOString();
+                        this.saveTasks();
+                        
+                        // Performance Optimization: Update only subtask and progress bar
+                        this.updateSubtaskDOM(taskId, subtaskId);
+                        this.updateSubtaskProgressDOM(taskId);
+                        this.updateStats();
+                    }
+                }
+            }
+
+            deleteSubtask(taskId, subtaskId) {
+                if (confirm('Delete this subtask?')) {
+                    const task = this.tasks.find(t => t.id === taskId);
+                    if (task) {
+                        task.subtasks = task.subtasks.filter(s => s.id !== subtaskId);
+                        task.updatedAt = new Date().toISOString();
+                        this.saveTasks();
+                        this.render();
+                    }
+                }
+            }
+
+            // Drag and drop handlers for subtasks
+            handleSubtaskDragStart(e) {
+                const subtaskItem = e.target;
+                subtaskItem.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/html', subtaskItem.innerHTML);
+                this.draggedSubtask = {
+                    taskId: parseInt(subtaskItem.dataset.taskId),
+                    subtaskId: parseInt(subtaskItem.dataset.subtaskId)
+                };
+            }
+
+            handleSubtaskDragEnd(e) {
+                e.target.classList.remove('dragging');
+                // Remove any remaining drag-over classes
+                document.querySelectorAll('.subtask-item.drag-over').forEach(item => {
+                    item.classList.remove('drag-over');
+                });
+            }
+
+            handleSubtaskDragOver(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                
+                const subtaskItem = e.target.closest('.subtask-item');
+                if (subtaskItem && !subtaskItem.classList.contains('dragging')) {
+                    subtaskItem.classList.add('drag-over');
+                }
+            }
+
+            handleSubtaskDragLeave(e) {
+                const subtaskItem = e.target.closest('.subtask-item');
+                if (subtaskItem) {
+                    subtaskItem.classList.remove('drag-over');
+                }
+            }
+
+            handleSubtaskDrop(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const targetItem = e.target.closest('.subtask-item');
+                if (!targetItem || !this.draggedSubtask) return;
+                
+                targetItem.classList.remove('drag-over');
+                
+                const targetTaskId = parseInt(targetItem.dataset.taskId);
+                const targetSubtaskId = parseInt(targetItem.dataset.subtaskId);
+                
+                // Only allow reordering within the same task
+                if (this.draggedSubtask.taskId !== targetTaskId) return;
+                
+                const task = this.tasks.find(t => t.id === targetTaskId);
+                if (!task) return;
+                
+                // Find the indices
+                const draggedIndex = task.subtasks.findIndex(s => s.id === this.draggedSubtask.subtaskId);
+                const targetIndex = task.subtasks.findIndex(s => s.id === targetSubtaskId);
+                
+                if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) return;
+                
+                // Reorder the subtasks array
+                const [draggedSubtask] = task.subtasks.splice(draggedIndex, 1);
+                task.subtasks.splice(targetIndex, 0, draggedSubtask);
+                
+                // Save and re-render
+                task.updatedAt = new Date().toISOString();
+                this.saveTasks();
+                this.render();
+                
+                this.draggedSubtask = null;
+            }
+
+            startEditSubtask(taskId, subtaskId) {
+                this.editingSubtaskId = subtaskId;
+                this.render();
+            }
+
+            saveEditSubtask(taskId, subtaskId, newText) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (task) {
+                    const subtask = task.subtasks.find(s => s.id === subtaskId);
+                    if (subtask) {
+                        subtask.text = newText.trim() || subtask.text;
+                        task.updatedAt = new Date().toISOString();
+                        this.saveTasks();
+                    }
+                }
+                this.editingSubtaskId = null;
+                this.render();
+            }
+
+            cancelEditSubtask() {
+                this.editingSubtaskId = null;
+                this.render();
+            }
+
+            toggleShowSubtasks(taskId) {
+                this.showingSubtasks[taskId] = !this.showingSubtasks[taskId];
+                this.render();
+            }
+
+            toggleCollapse(taskId) {
+                this.collapsedTasks[taskId] = !this.collapsedTasks[taskId];
+                this.render();
+            }
+
+            getSubtaskProgress(task) {
+                if (!task.subtasks || task.subtasks.length === 0) return null;
+                const completed = task.subtasks.filter(s => s.completed).length;
+                const total = task.subtasks.length;
+                return { completed, total };
+            }
+
+            async filterTasks() {
+                let filtered;
+                switch (this.currentFilter) {
+                    case 'archived':
+                        // Always load archived tasks from monthly files/localStorage
+                        if (!this.archivesLoaded) {
+                            this.loadedArchives = await this.loadPastYearArchives();
+                            this.archivesLoaded = true;
+                        }
+                        // Show archived tasks from archive storage
+                        filtered = this.loadedArchives;
+                        break;
+                    case 'active':
+                        // Show non-archived, non-completed tasks
+                        filtered = this.tasks.filter(t => !t.completed && !t.archived);
+                        break;
+                    case 'completed':
+                        // Show non-archived, completed tasks
+                        filtered = this.tasks.filter(t => t.completed && !t.archived);
+                        break;
+                    case 'high':
+                    case 'medium':
+                    case 'low':
+                        // Show non-archived tasks with specific priority
+                        filtered = this.tasks.filter(t => t.priority === this.currentFilter && !t.archived);
+                        break;
+                    default:
+                        // Show all non-archived tasks
+                        filtered = this.tasks.filter(t => !t.archived);
+                }
+                
+                // Apply search filter if search term is present (UX Enhancement: Search title, description, subtasks)
+                if (this.searchTerm.trim()) {
+                    const searchLower = this.searchTerm.toLowerCase();
+                    
+                    // Filter current results by search term
+                    const currentResults = filtered.filter(t => {
+                        // Search in title
+                        if (t.title.toLowerCase().includes(searchLower)) return true;
+                        
+                        // Search in description/content
+                        if (t.content && t.content.toLowerCase().includes(searchLower)) return true;
+                        
+                        // Search in subtasks
+                        if (t.subtasks && t.subtasks.some(st => st.text.toLowerCase().includes(searchLower))) return true;
+                        
+                        // Search in tags (UX Enhancement)
+                        if (t.tags && t.tags.some(tag => tag.toLowerCase().includes(searchLower))) return true;
+                        
+                        return false;
+                    });
+                    
+                    // If searching and not on archived view, also search archives
+                    // Cache archives during search to avoid reloading on every keystroke
+                    if (this.currentFilter !== 'archived') {
+                        // Load archives once per search session
+                        if (!this.archivesLoaded) {
+                            this.loadedArchives = await this.loadPastYearArchives();
+                            this.archivesLoaded = true;
+                        }
+                        
+                        // Search in cached archives
+                        const archivedResults = this.loadedArchives.filter(t => {
+                            if (t.title.toLowerCase().includes(searchLower)) return true;
+                            if (t.content && t.content.toLowerCase().includes(searchLower)) return true;
+                            if (t.subtasks && t.subtasks.some(st => st.text.toLowerCase().includes(searchLower))) return true;
+                            if (t.tags && t.tags.some(tag => tag.toLowerCase().includes(searchLower))) return true;
+                            return false;
+                        });
+                        
+                        console.log(`🔍 Found ${archivedResults.length} results in archives`);
+                        // Combine current tasks with archive search results
+                        filtered = [...currentResults, ...archivedResults];
+                    } else {
+                        filtered = currentResults;
+                    }
+                    
+                    // Update search result count
+                    this.updateSearchResultCount(filtered.length);
+                } else {
+                    // Clear result count when no search
+                    this.updateSearchResultCount(null);
+                }
+                
+                return filtered;
+            }
+            
+            // UX Enhancement: Show search result count
+            updateSearchResultCount(count) {
+                const countEl = document.getElementById('search-result-count');
+                if (count === null) {
+                    countEl.textContent = '';
+                } else {
+                    countEl.textContent = count === 0 
+                        ? '❌ No matches found'
+                        : count === 1
+                        ? '✓ Found 1 task'
+                        : `✓ Found ${count} tasks`;
+                }
+            }
+
+            clearCompleted() {
+                if (confirm('Delete all completed tasks? This cannot be undone.')) {
+                    this.tasks = this.tasks.filter(t => !t.completed || t.archived);
+                    this.saveTasks();
+                    this.render();
+                }
+            }
+
+            updateStats() {
+                const nonArchived = this.tasks.filter(t => !t.archived);
+                const total = nonArchived.length;
+                const active = nonArchived.filter(t => !t.completed).length;
+                const completed = nonArchived.filter(t => t.completed).length;
+
+                document.getElementById('stat-total').textContent = total;
+                document.getElementById('stat-active').textContent = active;
+                document.getElementById('stat-completed').textContent = completed;
+                
+                // Update storage stats
+                this.updateStorageStats();
+            }
+            
+            // Calculate and display storage usage
+            updateStorageStats() {
+                try {
+                    const storageInfo = this.getStorageUsage();
+                    const storageEl = document.getElementById('stat-storage');
+                    
+                    if (storageEl) {
+                        // Display percentage with color coding
+                        const percent = storageInfo.percentUsed;
+                        console.log('🔍 Raw percent value:', percent, 'Type:', typeof percent);
+                        
+                        // Show more precision for very small percentages
+                        const displayPercent = percent < 1 ? percent.toFixed(2) : percent.toFixed(1);
+                        console.log('🔍 Display percent:', displayPercent);
+                        
+                        storageEl.textContent = `${displayPercent}%`;
+                        
+                        // Color code based on usage
+                        if (percent >= 90) {
+                            storageEl.style.color = '#ff4444'; // Red - critical
+                        } else if (percent >= 75) {
+                            storageEl.style.color = '#ffaa00'; // Orange - warning
+                        } else if (percent >= 50) {
+                            storageEl.style.color = '#ffa834'; // Light orange
+                        } else {
+                            storageEl.style.color = '#4ade80'; // Green - healthy
+                        }
+                        
+                        // Update tooltip with detailed info
+                        storageEl.title = `Storage Usage:\n${storageInfo.usedKB} KB / ${storageInfo.quotaKB} KB\n(${storageInfo.usedMB} MB / ${storageInfo.quotaMB} MB)\n\nCompression: ${storageInfo.compressionRatio}%\nClick for details`;
+                        
+                        // Make it look clickable
+                        storageEl.style.cursor = 'pointer';
+                        
+                        console.log('📊 Storage stats updated:', storageInfo);
+                    } else {
+                        console.error('Storage stat element not found');
+                    }
+                } catch (e) {
+                    console.error('Failed to update storage stats:', e);
+                }
+            }
+            
+            // Get current storage usage
+            getStorageUsage() {
+                // Estimate localStorage quota (5MB for most browsers, 10MB for some)
+                const QUOTA_BYTES = 5 * 1024 * 1024; // 5 MB in bytes (conservative estimate)
+                
+                let totalUsed = 0;
+                let tasksSize = 0;
+                const breakdown = {}; // Track size per key
+                
+                // Calculate total localStorage usage for this origin
+                for (let key in localStorage) {
+                    if (localStorage.hasOwnProperty(key)) {
+                        const value = localStorage.getItem(key);
+                        const size = (key.length + (value ? value.length : 0)) * 2; // UTF-16 = 2 bytes per char
+                        totalUsed += size;
+                        breakdown[key] = size;
+                        
+                        if (key === 'tasks') {
+                            tasksSize = size;
+                        }
+                    }
+                }
+                
+                // Get uncompressed size for comparison
+                const uncompressedSize = JSON.stringify(this.tasks).length * 2;
+                const compressionRatio = tasksSize > 0 ? ((tasksSize / uncompressedSize) * 100).toFixed(1) : 0;
+                
+                const percentUsed = parseFloat(((totalUsed / QUOTA_BYTES) * 100).toFixed(1));
+                
+                return {
+                    totalBytes: totalUsed,
+                    totalKB: (totalUsed / 1024).toFixed(2),
+                    totalMB: (totalUsed / (1024 * 1024)).toFixed(2),
+                    tasksBytes: tasksSize,
+                    tasksKB: (tasksSize / 1024).toFixed(2),
+                    tasksMB: (tasksSize / (1024 * 1024)).toFixed(2),
+                    quotaBytes: QUOTA_BYTES,
+                    quotaKB: (QUOTA_BYTES / 1024).toFixed(0),
+                    quotaMB: (QUOTA_BYTES / (1024 * 1024)).toFixed(0),
+                    usedKB: (totalUsed / 1024).toFixed(2),
+                    usedMB: (totalUsed / (1024 * 1024)).toFixed(2),
+                    availableKB: ((QUOTA_BYTES - totalUsed) / 1024).toFixed(2),
+                    availableMB: ((QUOTA_BYTES - totalUsed) / (1024 * 1024)).toFixed(2),
+                    percentUsed: percentUsed,
+                    compressionRatio: compressionRatio,
+                    taskCount: this.tasks.length,
+                    breakdown: breakdown // Include breakdown of all keys
+                };
+            }
+            
+            // Show detailed storage information in modal
+            showStorageModal(info) {
+                const avgPerTask = info.taskCount > 0 
+                    ? (info.tasksBytes / info.taskCount / 1024).toFixed(2) 
+                    : '0.00';
+                
+                // Generate breakdown of storage by key
+                let breakdownText = '\n🔍 Storage Breakdown:\n';
+                const sortedKeys = Object.entries(info.breakdown)
+                    .sort((a, b) => b[1] - a[1]) // Sort by size, largest first
+                    .slice(0, 10); // Show top 10
+                
+                for (const [key, bytes] of sortedKeys) {
+                    const kb = (bytes / 1024).toFixed(2);
+                    const percent = ((bytes / info.totalBytes) * 100).toFixed(1);
+                    breakdownText += `  • ${key}: ${kb} KB (${percent}%)\n`;
+                }
+                
+                if (Object.keys(info.breakdown).length > 10) {
+                    breakdownText += `  • ... and ${Object.keys(info.breakdown).length - 10} more keys\n`;
+                }
+                
+                const message = `📊 Storage Usage Details
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total Usage: ${info.usedMB} MB (${info.percentUsed}%)
+Available: ${info.availableMB} MB
+Quota: ${info.quotaMB} MB
+
+Task Data: ${info.tasksMB} MB (${info.tasksKB} KB)
+Tasks Stored: ${info.taskCount}
+Compression Ratio: ${info.compressionRatio}%
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Avg per Task: ${avgPerTask} KB
+${breakdownText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' : info.percentUsed >= 50 ? '💡 You have plenty of space remaining.' : '✅ Storage usage is healthy!'}`;
+                
+                document.getElementById('storage-details').textContent = message;
+                // Use 'flex' instead of 'block' to maintain centering
+                document.getElementById('storage-modal').style.display = 'flex';
+            }
+            
+            closeStorageModal() {
+                document.getElementById('storage-modal').style.display = 'none';
+            }
+            
+            // ==================== FILE STORAGE SETUP WIZARD ====================
+            
+            showFileStorageSetupWizard() {
+                document.getElementById('file-storage-setup-modal').style.display = 'flex';
+            }
+            
+            closeFileStorageSetupWizard() {
+                document.getElementById('file-storage-setup-modal').style.display = 'none';
+                localStorage.setItem('hasSeenFileStorageSetup', 'true');
+            }
+            
+            async selectStorageOption(option) {
+                if (option === 'file') {
+                    // Setup file storage
+                    const success = await this.setupFileStorage();
+                    if (success) {
+                        // Migrate existing tasks if any (though they should already be loaded)
+                        if (this.tasks.length > 0) {
+                            await this.migrateToFileStorage();
+                        }
+                        
+                        const dirName = localStorage.getItem('taskDirectoryName') || 'selected folder';
+                        alert(`✅ File storage configured!\n\nYour tasks are now saved to:\n📁 ${dirName}/tasks.json\n\n✨ File location remembered across browser sessions.\n💡 Browser storage freed for other apps!\n\nTasks loaded: ${this.tasks.length}`);
+                    } else {
+                        // User cancelled or error occurred
+                        alert('⚠️ File storage setup was cancelled or failed.\n\nFalling back to browser storage (localStorage).');
+                        this.useFileStorage = false;
+                        localStorage.setItem('useFileStorage', 'false');
+                    }
+                } else {
+                    // Use browser storage
+                    this.useFileStorage = false;
+                    this.fileStorageReady = false;
+                    localStorage.setItem('useFileStorage', 'false');
+                }
+                
+                this.closeFileStorageSetupWizard();
+                this.updateFileStorageIndicator();
+                this.updateFooter();
+                
+                // Re-render to show tasks
+                this.render();
+            }
+            
+            // ==================== MIGRATION TOOL ====================
+            
+            async migrateToFileStorage() {
+                try {
+                    console.log(`🔄 Migrating ${this.tasks.length} tasks to file storage...`);
+                    
+                    // Save all tasks to file
+                    await this.saveToFile();
+                    
+                    // Clear tasks from localStorage to free space
+                    localStorage.removeItem('tasks');
+                    localStorage.removeItem('tasksCompressed');
+                    
+                    console.log('✅ Migration complete! Browser storage cleared.');
+                    return true;
+                } catch (e) {
+                    console.error('Migration failed:', e);
+                    return false;
+                }
+            }
+            
+            async switchToFileStorage() {
+                // Called from settings to switch from localStorage to file
+                if (this.useFileStorage) {
+                    alert('⚠️ File storage is already enabled.');
+                    return;
+                }
+                
+                const confirmed = confirm('🔄 Switch to File Storage?\n\nThis will:\n• Move all tasks from browser to a file\n• Free up browser storage space\n• Require folder permission\n\nContinue?');
+                if (!confirmed) return;
+                
+                const success = await this.setupFileStorage();
+                if (success) {
+                    await this.migrateToFileStorage();
+                    
+                    // Close the settings modal
+                    this.closeStorageSettings();
+                    
+                    // Update all indicators
+                    this.updateFileStorageIndicator();
+                    this.updateFooter();
+                    
+                    // Re-render to show tasks
+                    this.render();
+                    
+                    const dirName = localStorage.getItem('taskDirectoryName') || 'selected folder';
+                    alert(`✅ Successfully switched to file storage!\n\nYour tasks are now saved to:\n📁 ${dirName}/tasks.json\n\nTasks loaded: ${this.tasks.length}`);
+                }
+            }
+            
+            async switchToBrowserStorage() {
+                // Called from settings to switch from file to localStorage
+                if (!this.useFileStorage) {
+                    alert('⚠️ Browser storage is already enabled.');
+                    return;
+                }
+                
+                const confirmed = confirm('⚠️ Switch to Browser Storage?\n\nThis will:\n• Copy all tasks from file to browser\n• Use limited localStorage space\n• Disable file storage\n\nContinue?');
+                if (!confirmed) return;
+                
+                try {
+                    // Load tasks from file one last time
+                    const fileTasks = await this.loadFromFile();
+                    if (fileTasks.length > 0) {
+                        this.tasks = fileTasks;
+                    }
+                    
+                    // Switch to localStorage
+                    this.useFileStorage = false;
+                    this.fileStorageReady = false;
+                    localStorage.setItem('useFileStorage', 'false');
+                    
+                    // Save to localStorage
+                    this.saveToLocalStorage();
+                    
+                    // Remove file handle
+                    await this.removeFileHandle('taskFile');
+                    this.taskFileHandle = null;
+                    
+                    this.updateFileStorageIndicator();
+                    this.updateFooter();
+                    alert('✅ Switched to browser storage!\n\nYour tasks are now saved in localStorage.');
+                    
+                } catch (e) {
+                    console.error('Switch failed:', e);
+                    alert('❌ Failed to switch storage method. Your tasks are safe in the file.');
+                }
+            }
+            
+            // ==================== STORAGE SETTINGS UI ====================
+            
+            showStorageSettings() {
+                // Update current storage display
+                const display = document.getElementById('current-storage-display');
+                if (this.useFileStorage && this.fileStorageReady) {
+                    display.innerHTML = `
+                        <span style="font-size: 24px;">📁</span>
+                        <div>
+                            <div style="font-weight: 600;">File Storage</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Tasks saved to local file</div>
+                        </div>
+                    `;
+                } else {
+                    display.innerHTML = `
+                        <span style="font-size: 24px;">🌐</span>
+                        <div>
+                            <div style="font-weight: 600;">Browser Storage</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Tasks saved in localStorage (~5MB limit)</div>
+                        </div>
+                    `;
+                }
+                
+                // Show/hide buttons based on current storage
+                const switchToFile = document.getElementById('switch-to-file-btn');
+                const switchToBrowser = document.getElementById('switch-to-browser-btn');
+                const changeLocation = document.getElementById('change-file-location-btn');
+                
+                if (this.useFileStorage) {
+                    switchToFile.style.display = 'none';
+                    switchToBrowser.style.display = 'block';
+                    changeLocation.style.display = 'block';
+                } else {
+                    switchToFile.style.display = 'block';
+                    switchToBrowser.style.display = 'none';
+                    changeLocation.style.display = 'none';
+                }
+                
+                document.getElementById('storage-settings-modal').style.display = 'flex';
+            }
+            
+            closeStorageSettings() {
+                document.getElementById('storage-settings-modal').style.display = 'none';
+            }
+            
+            async changeFileLocation() {
+                const confirmed = confirm('📂 Change File Location?\n\nThis will:\n• Let you select a new folder\n• Copy all tasks to the new location\n• Update the saved file path\n\nContinue?');
+                if (!confirmed) return;
+                
+                try {
+                    // Setup new file location
+                    const success = await this.setupFileStorage();
+                    if (success) {
+                        // Save tasks to new location
+                        await this.saveToFile();
+                        this.updateFileStorageIndicator();
+                        this.updateFooter();
+                        this.closeStorageSettings();
+                        
+                        const dirName = localStorage.getItem('taskDirectoryName') || 'selected folder';
+                        alert(`✅ File location updated!\n\nYour tasks are now saved to:\n📁 ${dirName}/tasks.json`);
+                    }
+                } catch (e) {
+                    console.error('Failed to change file location:', e);
+                    alert('❌ Failed to change file location. Your tasks are still safe at the original location.');
+                }
+            }
+            
+            async clearFileStorage() {
+                const confirmed = confirm('🗑️ Reset File Storage?\n\n⚠️ WARNING: This will:\n• Clear all file storage settings\n• Remove saved folder permissions\n• Switch back to browser storage\n• Your tasks will be safe in localStorage\n\nThis is useful if you have permission errors.\n\nContinue?');
+                if (!confirmed) return;
+                
+                try {
+                    // Clear all file storage data
+                    await this.removeFileHandle('taskFile');
+                    await this.removeFileHandle('taskDirectory');
+                    localStorage.removeItem('useFileStorage');
+                    localStorage.removeItem('taskDirectoryName');
+                    localStorage.removeItem('lastFileSaveTime');
+                    localStorage.removeItem('taskCount');
+                    localStorage.removeItem('hasSeenFileStorageSetup');
+                    
+                    // Reset state
+                    this.useFileStorage = false;
+                    this.fileStorageReady = false;
+                    this.taskFileHandle = null;
+                    this.taskDirectoryHandle = null;
+                    
+                    // Save tasks to localStorage
+                    this.saveToLocalStorage();
+                    
+                    // Update UI
+                    this.updateFileStorageIndicator();
+                    this.updateFooter();
+                    this.closeStorageSettings();
+                    
+                    alert('✅ File storage reset complete!\n\nYou can now set up file storage again from scratch.\n\nYour tasks are safe in browser storage.');
+                    
+                } catch (e) {
+                    console.error('Failed to clear file storage:', e);
+                    alert('❌ Failed to reset file storage. Please try refreshing the page.');
+                }
+            }
+            
+            async copyStorageToClipboard() {
+                const text = document.getElementById('storage-details').textContent;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    const btn = document.getElementById('copy-storage-btn');
+                    const originalText = btn.textContent;
+                    btn.textContent = '✅ Copied!';
+                    btn.style.background = '#3fb950';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy:', err);
+                    alert('Failed to copy to clipboard. Please select and copy manually.');
+                }
+            }
+            
+            // Legacy function - keeping for backward compatibility
+            showStorageDetails(info) {
+                // Redirect to modal
+                this.showStorageModal(info);
+            }
+
+            renderTask(task) {
+                const isEditing = this.editingTaskId === task.id;
+                const progress = this.getSubtaskProgress(task);
+                const showSubtasks = this.showingSubtasks[task.id];
+                const isCollapsed = this.collapsedTasks[task.id];
+                const completedDate = task.completedAt ? new Date(task.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                const archivedDate = task.archivedAt ? new Date(task.archivedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                const dueDateStatus = this.getDueDateStatus(task.dueDate); // UX Enhancement: Due date status
+
+                if (isEditing) {
+                    return `
+                        <li class="task-item ${task.completed ? 'completed' : ''} ${task.archived ? 'archived' : ''}">
+                            <input 
+                                type="checkbox" 
+                                class="task-checkbox" 
+                                ${task.completed ? 'checked' : ''}
+                                onchange="taskManager.toggleTask(${task.id})"
+                            >
+                            <div class="task-content">
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <input 
+                                        type="text" 
+                                        class="task-edit-input" 
+                                        value="${this.escapeHtml(task.title)}"
+                                        id="edit-title-${task.id}"
+                                        placeholder="Task title"
+                                    >
+                                    <textarea 
+                                        class="task-edit-input" 
+                                        rows="3"
+                                        id="edit-content-${task.id}"
+                                        placeholder="Task description"
+                                    >${this.escapeHtml(task.content)}</textarea>
+                                </div>
+                                <div class="task-actions" style="margin-top: 8px;">
+                                    <button class="task-action-btn" onclick="taskManager.saveEditTask(${task.id}, document.getElementById('edit-title-${task.id}').value, document.getElementById('edit-content-${task.id}').value)">Save</button>
+                                    <button class="task-action-btn" onclick="taskManager.cancelEditTask()">Cancel</button>
+                                </div>
+                            </div>
+                        </li>
+                    `;
+                }
+
+                return `
+                    <li class="task-item ${task.completed ? 'completed' : ''} ${task.archived ? 'archived' : ''} ${isCollapsed ? 'collapsed' : ''} draggable" data-task-id="${task.id}">
+                        <span class="drag-handle" draggable="true" title="Drag to reorder">⋮⋮</span>
+                        <button class="task-collapse-btn" onclick="taskManager.toggleCollapse(${task.id})" title="${isCollapsed ? 'Expand' : 'Collapse'} task">
+                            ${isCollapsed ? '▶' : '▼'}
+                        </button>
+                        <input 
+                            type="checkbox" 
+                            class="task-checkbox" 
+                            ${task.completed ? 'checked' : ''}
+                            onchange="taskManager.toggleTask(${task.id})"
+                        >
+                        <div class="task-content">
+                            <h3 class="task-title">
+                                ${this.escapeHtml(task.title)}
+                                ${task.archived ? '<span class="archived-badge">Archived</span>' : ''}
+                            </h3>
+                            <div class="task-id" onclick="taskManager.copyTaskId(${task.id}, event)" title="Click to copy ID">
+                                ID: ${task.id}
+                            </div>
+                            ${!isCollapsed ? `
+                                ${task.content ? `<p class="task-description">${this.escapeHtml(task.content)}</p>` : ''}
+                                ${task.tags && task.tags.length > 0 ? `
+                                    <div class="task-tags">
+                                        ${task.tags.map(tag => `
+                                            <span class="tag-badge" style="background: ${this.getTagColor(tag)};">
+                                                #${this.escapeHtml(tag)}
+                                                <button class="tag-remove-btn" onclick="taskManager.removeTag(${task.id}, '${this.escapeHtml(tag)}')" title="Remove tag">×</button>
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                                <div class="task-meta">
+                                    <span class="task-priority ${task.priority}">${task.priority.toUpperCase()}</span>
+                                    <span class="task-category">${this.escapeHtml(task.category)}</span>
+                                    ${progress ? `<span class="task-date">${progress.completed}/${progress.total} steps</span>` : ''}
+                                    ${dueDateStatus && !task.completed ? `<span class="due-date-badge" style="background: ${dueDateStatus.color}; color: white; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 600;">${dueDateStatus.icon} ${dueDateStatus.text}</span>` : ''}
+                                </div>
+                                ${task.subtasks.length > 0 || !task.archived ? this.renderSubtasksSection(task, showSubtasks) : ''}
+                            ` : ''}
+                        </div>
+                        ${task.completed && task.completedAt ? `
+                            <div class="task-completed-date" title="Completed: ${completedDate}">
+                                <span class="completed-icon">✓</span>
+                                <span class="completed-text">${completedDate}</span>
+                            </div>
+                        ` : ''}
+                        ${task.archived && task.archivedAt ? `
+                            <div class="task-archived-date" title="Archived: ${archivedDate}">
+                                <span class="archived-icon">📦</span>
+                                <span class="archived-text">${archivedDate}</span>
+                            </div>
+                        ` : ''}
+                        <div class="task-actions">
+                            <button class="task-action-btn task-edit-btn" onclick="taskManager.startEditTask(${task.id})">Edit</button>
+                            <button class="task-action-btn task-editor-btn" onclick="taskManager.openTaskEditor(${task.id})" title="Open in comprehensive editor">📝 Editor</button>
+                            ${task.archived ? 
+                                `<button class="task-action-btn task-unarchive-btn" onclick="taskManager.unarchiveTask(${task.id})">Unarchive</button>` :
+                                `<button class="task-action-btn task-archive-btn" onclick="taskManager.archiveTask(${task.id})">Archive</button>`
+                            }
+                            <button class="task-action-btn task-delete-btn" onclick="taskManager.deleteTask(${task.id})">Delete</button>
+                        </div>
+                    </li>
+                `;
+            }
+
+            renderSubtasksSection(task, showSubtasks) {
+                const taskId = task.id;
+                const hasSubtasks = task.subtasks.length > 0;
+
+                return `
+                    <div class="subtasks-section">
+                        <div class="subtasks-title">📝 Next Steps (${task.subtasks.length})</div>
+                        ${showSubtasks && hasSubtasks ? `
+                            <ul class="subtask-list">
+                                ${task.subtasks.map(subtask => this.renderSubtask(taskId, subtask)).join('')}
+                            </ul>
+                        ` : ''}
+                        ${(showSubtasks || !hasSubtasks) && !task.archived ? `
+                            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: flex-start;">
+                                <textarea 
+                                    class="subtask-input" 
+                                    id="subtask-input-${taskId}"
+                                    placeholder="Add a step... (Ctrl+Enter to submit)"
+                                    rows="2"
+                                    onkeypress="if(event.key === 'Enter' && event.ctrlKey) { event.preventDefault(); taskManager.addSubtask(${taskId}); }"
+                                ></textarea>
+                                <button class="subtask-btn" onclick="taskManager.addSubtask(${taskId})">Add</button>
+                            </div>
+                        ` : ''}
+                        ${hasSubtasks ? `
+                            <button class="toggle-subtasks-btn" onclick="taskManager.toggleShowSubtasks(${taskId})">
+                                ${showSubtasks ? '▲ Hide' : '▼ Show'} Steps
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            renderSubtask(taskId, subtask) {
+                const isEditing = this.editingSubtaskId === subtask.id;
+                const completedDate = subtask.completedAt ? new Date(subtask.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+
+                if (isEditing) {
+                    return `
+                        <li class="subtask-item" data-subtask-id="${subtask.id}">
+                            <span class="subtask-drag-handle">⋮⋮</span>
+                            <textarea 
+                                class="subtask-edit-input" 
+                                id="edit-subtask-${subtask.id}"
+                                rows="2"
+                                onkeypress="if(event.key === 'Enter' && event.ctrlKey) { event.preventDefault(); taskManager.saveEditSubtask(${taskId}, ${subtask.id}, this.value); }"
+                            >${this.escapeHtml(subtask.text)}</textarea>
+                            <button 
+                                class="subtask-btn"
+                                onclick="taskManager.saveEditSubtask(${taskId}, ${subtask.id}, document.getElementById('edit-subtask-${subtask.id}').value)"
+                            >Save</button>
+                            <button 
+                                class="subtask-btn subtask-delete-btn"
+                                onclick="taskManager.cancelEditSubtask()"
+                            >Cancel</button>
+                        </li>
+                    `;
+                }
+
+                return `
+                    <li class="subtask-item" 
+                        data-subtask-id="${subtask.id}"
+                        data-task-id="${taskId}"
+                        draggable="true"
+                        ondragstart="taskManager.handleSubtaskDragStart(event)"
+                        ondragend="taskManager.handleSubtaskDragEnd(event)"
+                        ondragover="taskManager.handleSubtaskDragOver(event)"
+                        ondragleave="taskManager.handleSubtaskDragLeave(event)"
+                        ondrop="taskManager.handleSubtaskDrop(event)">
+                        <span class="subtask-drag-handle">⋮⋮</span>
+                        <input 
+                            type="checkbox"
+                            class="subtask-checkbox"
+                            ${subtask.completed ? 'checked' : ''}
+                            onchange="taskManager.toggleSubtask(${taskId}, ${subtask.id})"
+                        >
+                        <span class="subtask-text ${subtask.completed ? 'completed' : ''}">${this.escapeHtml(subtask.text)}</span>
+                        ${subtask.completedAt ? `<span class="subtask-completed-date">✓ ${completedDate}</span>` : ''}
+                        <div style="margin-left: auto; display: flex; gap: 4px;">
+                            <button 
+                                class="subtask-btn subtask-edit-btn"
+                                onclick="taskManager.startEditSubtask(${taskId}, ${subtask.id})"
+                            >Edit</button>
+                            <button 
+                                class="subtask-btn subtask-delete-btn"
+                                onclick="taskManager.deleteSubtask(${taskId}, ${subtask.id})"
+                            >Delete</button>
+                        </div>
+                    </li>
+                `;
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            async render() {
+                const filteredTasks = await this.filterTasks();
+                const taskList = document.getElementById('task-list');
+                const emptyState = document.getElementById('empty-state');
+
+                this.updateStats();
+
+                if (filteredTasks.length === 0) {
+                    taskList.innerHTML = '';
+                    emptyState.style.display = 'block';
+                    return;
+                }
+                
+                emptyState.style.display = 'none';
+                
+                // Sort tasks using the selected sort method
+                const sortedTasks = this.sortTasks(filteredTasks);
+                this.allSortedTasks = sortedTasks; // Cache for virtual scrolling
+                
+                // Performance Optimization: Virtual Scrolling
+                if (this.virtualScrollEnabled && sortedTasks.length > this.itemsPerPage) {
+                    this.renderVirtualScrolled(sortedTasks, taskList);
+                } else {
+                    // For small lists, render all (no overhead)
+                    taskList.innerHTML = sortedTasks.map(task => this.renderTask(task)).join('');
+                }
+                
+                // UX Enhancement: Setup drag & drop for custom sort mode
+                if (this.sortMethod === 'custom') {
+                    this.setupDragAndDrop();
+                }
+            }
+            
+            // Performance Optimization: Virtual Scrolling Implementation
+            renderVirtualScrolled(sortedTasks, taskList) {
+                // Calculate pagination
+                this.totalPages = Math.ceil(sortedTasks.length / this.itemsPerPage);
+                
+                // Get visible tasks for current page
+                const startIdx = this.currentPage * this.itemsPerPage;
+                const endIdx = Math.min(startIdx + this.itemsPerPage, sortedTasks.length);
+                this.visibleTasks = sortedTasks.slice(startIdx, endIdx);
+                
+                // Render visible tasks
+                const tasksHTML = this.visibleTasks.map(task => this.renderTask(task)).join('');
+                
+                // Add load more button if there are more pages
+                const hasMore = this.currentPage < this.totalPages - 1;
+                const loadMoreButton = hasMore ? `
+                    <div class="load-more-container" style="text-align: center; padding: 20px;">
+                        <button class="load-more-btn" onclick="app.loadMoreTasks()" 
+                                style="padding: 12px 24px; font-size: 1em; cursor: pointer; 
+                                       background: linear-gradient(135deg, var(--primary-orange) 0%, var(--primary-orange-dark) 100%);
+                                       color: white; border: none; border-radius: 8px; 
+                                       box-shadow: 0 4px 12px rgba(255, 138, 101, 0.3);
+                                       transition: transform 0.2s;">
+                            📥 Load More Tasks (${sortedTasks.length - endIdx} remaining)
+                        </button>
+                        <div style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">
+                            Showing ${endIdx} of ${sortedTasks.length} tasks
+                        </div>
+                    </div>
+                ` : `
+                    <div class="all-loaded-indicator" style="text-align: center; padding: 20px; 
+                                                              color: var(--text-secondary); font-size: 0.9em;">
+                        ✅ All ${sortedTasks.length} tasks loaded
+                    </div>
+                `;
+                
+                taskList.innerHTML = tasksHTML + loadMoreButton;
+                
+                // Setup Intersection Observer for automatic loading
+                this.setupIntersectionObserver();
+            }
+            
+            // Load more tasks (manual button or auto-trigger)
+            loadMoreTasks() {
+                if (this.currentPage < this.totalPages - 1) {
+                    this.currentPage++;
+                    console.log(`📄 Loading page ${this.currentPage + 1} of ${this.totalPages}`);
+                    
+                    // Get tasks for this page
+                    const startIdx = this.currentPage * this.itemsPerPage;
+                    const endIdx = Math.min(startIdx + this.itemsPerPage, this.allSortedTasks.length);
+                    const newTasks = this.allSortedTasks.slice(startIdx, endIdx);
+                    
+                    // Append to visible tasks
+                    this.visibleTasks = this.visibleTasks.concat(newTasks);
+                    
+                    // Render just the new tasks (append, don't replace)
+                    const taskList = document.getElementById('task-list');
+                    const loadMoreContainer = taskList.querySelector('.load-more-container, .all-loaded-indicator');
+                    
+                    if (loadMoreContainer) {
+                        // Remove old load more button
+                        loadMoreContainer.remove();
+                    }
+                    
+                    // Append new tasks
+                    const newTasksHTML = newTasks.map(task => this.renderTask(task)).join('');
+                    
+                    // Add new load more button if needed
+                    const hasMore = this.currentPage < this.totalPages - 1;
+                    const loadMoreButton = hasMore ? `
+                        <div class="load-more-container" style="text-align: center; padding: 20px;">
+                            <button class="load-more-btn" onclick="app.loadMoreTasks()" 
+                                    style="padding: 12px 24px; font-size: 1em; cursor: pointer; 
+                                           background: linear-gradient(135deg, var(--primary-orange) 0%, var(--primary-orange-dark) 100%);
+                                           color: white; border: none; border-radius: 8px; 
+                                           box-shadow: 0 4px 12px rgba(255, 138, 101, 0.3);
+                                           transition: transform 0.2s;">
+                                📥 Load More Tasks (${this.allSortedTasks.length - endIdx} remaining)
+                            </button>
+                            <div style="margin-top: 10px; color: var(--text-secondary); font-size: 0.9em;">
+                                Showing ${endIdx} of ${this.allSortedTasks.length} tasks
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="all-loaded-indicator" style="text-align: center; padding: 20px; 
+                                                                  color: var(--text-secondary); font-size: 0.9em;">
+                            ✅ All ${this.allSortedTasks.length} tasks loaded
+                        </div>
+                    `;
+                    
+                    taskList.insertAdjacentHTML('beforeend', newTasksHTML + loadMoreButton);
+                    
+                    // Re-setup observer
+                    this.setupIntersectionObserver();
+                }
+            }
+            
+            // Setup Intersection Observer for automatic loading
+            setupIntersectionObserver() {
+                // Disconnect previous observer if exists
+                if (this.intersectionObserver) {
+                    this.intersectionObserver.disconnect();
+                }
+                
+                // Find the load more button
+                const loadMoreBtn = document.querySelector('.load-more-btn');
+                if (!loadMoreBtn) return;
+                
+                // Create observer that triggers when button comes into view
+                this.intersectionObserver = new IntersectionObserver(
+                    (entries) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting && this.currentPage < this.totalPages - 1) {
+                                console.log('🔍 Load more button visible, auto-loading...');
+                                this.loadMoreTasks();
+                            }
+                        });
+                    },
+                    {
+                        root: null, // Use viewport
+                        rootMargin: '100px', // Trigger 100px before button is visible
+                        threshold: 0.1
+                    }
+                );
+                
+                this.intersectionObserver.observe(loadMoreBtn);
+            }
+            
+            // Performance Optimization: Granular DOM Updates
+            // Updates only the specific task element instead of re-rendering entire list
+            updateTaskDOM(taskId) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (!task) return;
+                
+                // Find the task element in DOM
+                const taskElements = document.querySelectorAll('.task-item');
+                let taskElement = null;
+                
+                for (const el of taskElements) {
+                    const checkbox = el.querySelector('.task-checkbox');
+                    if (checkbox && checkbox.getAttribute('onchange') && 
+                        checkbox.getAttribute('onchange').includes(`${taskId}`)) {
+                        taskElement = el;
+                        break;
+                    }
+                }
+                
+                if (!taskElement) {
+                    // Task not currently visible (virtual scrolling), skip update
+                    console.log(`Task ${taskId} not in DOM, skipping granular update`);
+                    return;
+                }
+                
+                // Update checkbox state
+                const checkbox = taskElement.querySelector('.task-checkbox');
+                if (checkbox) {
+                    checkbox.checked = task.completed;
+                }
+                
+                // Update completed class
+                if (task.completed) {
+                    taskElement.classList.add('completed');
+                } else {
+                    taskElement.classList.remove('completed');
+                }
+                
+                // Update completed date
+                const completedDateEl = taskElement.querySelector('.task-completed-date');
+                if (completedDateEl) {
+                    if (task.completedAt) {
+                        const date = new Date(task.completedAt).toLocaleDateString('en-US', { 
+                            month: 'short', day: 'numeric', year: 'numeric' 
+                        });
+                        completedDateEl.textContent = `Completed: ${date}`;
+                        completedDateEl.style.display = '';
+                    } else {
+                        completedDateEl.textContent = '';
+                        completedDateEl.style.display = 'none';
+                    }
+                }
+                
+                console.log(`✨ Granular update: Task ${taskId} (${task.completed ? 'completed' : 'active'})`);
+            }
+            
+            // Update task title/content (for inline edits)
+            updateTaskContentDOM(taskId, updates) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (!task) return;
+                
+                const taskElements = document.querySelectorAll('.task-item');
+                let taskElement = null;
+                
+                for (const el of taskElements) {
+                    const checkbox = el.querySelector('.task-checkbox');
+                    if (checkbox && checkbox.getAttribute('onchange') && 
+                        checkbox.getAttribute('onchange').includes(`${taskId}`)) {
+                        taskElement = el;
+                        break;
+                    }
+                }
+                
+                if (!taskElement) return;
+                
+                // Update title if changed
+                if (updates.title !== undefined) {
+                    const titleEl = taskElement.querySelector('.task-title');
+                    if (titleEl) {
+                        titleEl.textContent = updates.title;
+                    }
+                }
+                
+                // Update description if changed
+                if (updates.content !== undefined) {
+                    const descEl = taskElement.querySelector('.task-description');
+                    if (descEl) {
+                        descEl.textContent = updates.content;
+                    }
+                }
+                
+                // Update priority if changed
+                if (updates.priority !== undefined) {
+                    const priorityBadge = taskElement.querySelector('.priority-badge');
+                    if (priorityBadge) {
+                        priorityBadge.textContent = updates.priority;
+                        priorityBadge.className = `priority-badge priority-${updates.priority}`;
+                    }
+                }
+                
+                // Update category if changed
+                if (updates.category !== undefined) {
+                    const categoryBadge = taskElement.querySelector('.category-badge');
+                    if (categoryBadge) {
+                        categoryBadge.textContent = updates.category;
+                    }
+                }
+                
+                console.log(`✨ Granular content update: Task ${taskId}`);
+            }
+            
+            // Update subtask progress bar
+            updateSubtaskProgressDOM(taskId) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (!task || !task.subtasks || task.subtasks.length === 0) return;
+                
+                const taskElements = document.querySelectorAll('.task-item');
+                let taskElement = null;
+                
+                for (const el of taskElements) {
+                    const checkbox = el.querySelector('.task-checkbox');
+                    if (checkbox && checkbox.getAttribute('onchange') && 
+                        checkbox.getAttribute('onchange').includes(`${taskId}`)) {
+                        taskElement = el;
+                        break;
+                    }
+                }
+                
+                if (!taskElement) return;
+                
+                const progress = this.getSubtaskProgress(task);
+                const progressBar = taskElement.querySelector('.progress-bar-fill');
+                const progressText = taskElement.querySelector('.progress-text');
+                
+                if (progressBar) {
+                    progressBar.style.width = `${progress.percentage}%`;
+                }
+                
+                if (progressText) {
+                    progressText.textContent = progress.text;
+                }
+                
+                console.log(`✨ Granular progress update: Task ${taskId} - ${progress.text}`);
+            }
+            
+            // Performance Optimization: Update stats display without re-rendering list
+            updateStats() {
+                const total = this.tasks.length;
+                const completed = this.tasks.filter(t => t.completed).length;
+                const active = total - completed;
+                
+                const totalEl = document.getElementById('stat-total');
+                const activeEl = document.getElementById('stat-active');
+                const completedEl = document.getElementById('stat-completed');
+                
+                if (totalEl) totalEl.textContent = total;
+                if (activeEl) activeEl.textContent = active;
+                if (completedEl) completedEl.textContent = completed;
+            }
+            
+            // Reset virtual scrolling (called when filter/sort changes)
+            resetVirtualScroll() {
+                this.currentPage = 0;
+                this.visibleTasks = [];
+                if (this.intersectionObserver) {
+                    this.intersectionObserver.disconnect();
+                    this.intersectionObserver = null;
+                }
+            }
+            
+            // Performance Optimization: Update individual subtask
+            updateSubtaskDOM(taskId, subtaskId) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (!task) return;
+                
+                const subtask = task.subtasks.find(s => s.id === subtaskId);
+                if (!subtask) return;
+                
+                // Find the subtask checkbox in DOM
+                const subtaskCheckboxes = document.querySelectorAll('.subtask-checkbox');
+                for (const checkbox of subtaskCheckboxes) {
+                    const onchangeAttr = checkbox.getAttribute('onchange');
+                    if (onchangeAttr && onchangeAttr.includes(`${taskId}`) && onchangeAttr.includes(`${subtaskId}`)) {
+                        // Update checkbox state
+                        checkbox.checked = subtask.completed;
+                        
+                        // Update parent list item styling
+                        const subtaskItem = checkbox.closest('li');
+                        if (subtaskItem) {
+                            const textSpan = subtaskItem.querySelector('.subtask-text');
+                            if (textSpan) {
+                                if (subtask.completed) {
+                                    textSpan.style.textDecoration = 'line-through';
+                                    textSpan.style.opacity = '0.6';
+                                } else {
+                                    textSpan.style.textDecoration = 'none';
+                                    textSpan.style.opacity = '1';
+                                }
+                            }
+                        }
+                        
+                        console.log(`✨ Granular subtask update: ${taskId}/${subtaskId}`);
+                        break;
+                    }
+                }
+            }
+
+            sortTasks(tasks) {
+                const tasksCopy = [...tasks];
+                
+                switch (this.sortMethod) {
+                    case 'custom':
+                        // UX Enhancement: Custom order (drag & drop)
+                        return this.sortByCustomOrder(tasksCopy);
+                    case 'due-date':
+                        // UX Enhancement: Sort by due date
+                        return this.sortByDueDate(tasksCopy);
+                    case 'priority':
+                        // Priority: high to low
+                        return this.sortByPriority(tasksCopy, false);
+                    case 'priority-reverse':
+                        // Priority: low to high
+                        return this.sortByPriority(tasksCopy, true);
+                    case 'title-asc':
+                        // Title: A to Z
+                        return this.sortByTitle(tasksCopy, false);
+                    case 'title-desc':
+                        // Title: Z to A
+                        return this.sortByTitle(tasksCopy, true);
+                    case 'archived-newest':
+                        // Archived: newest first
+                        return this.sortByArchivedDate(tasksCopy, false);
+                    case 'archived-oldest':
+                        // Archived: oldest first
+                        return this.sortByArchivedDate(tasksCopy, true);
+                    default:
+                        return tasksCopy;
+                }
+            }
+            
+            // UX Enhancement: Custom order sorting based on drag & drop
+            sortByCustomOrder(tasks) {
+                if (this.customOrder.length === 0) {
+                    // No custom order set, return as-is
+                    return tasks;
+                }
+                
+                // Sort tasks according to customOrder array (by task ID)
+                return tasks.sort((a, b) => {
+                    const aIndex = this.customOrder.indexOf(a.id);
+                    const bIndex = this.customOrder.indexOf(b.id);
+                    
+                    // If task not in custom order, put at end
+                    if (aIndex === -1 && bIndex === -1) return 0;
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    
+                    return aIndex - bIndex;
+                });
+            }
+
+            sortByPriority(tasks, reverse = false) {
+                // Define priority order: high=3, medium=2, low=1
+                const priorityOrder = { high: 3, medium: 2, low: 1 };
+                
+                return tasks.sort((a, b) => {
+                    const priorityA = priorityOrder[a.priority] || 0;
+                    const priorityB = priorityOrder[b.priority] || 0;
+                    // Sort descending (high to low) or ascending (low to high)
+                    return reverse ? (priorityA - priorityB) : (priorityB - priorityA);
+                });
+            }
+
+            sortByTitle(tasks, reverse = false) {
+                return tasks.sort((a, b) => {
+                    const titleA = a.title.toLowerCase();
+                    const titleB = b.title.toLowerCase();
+                    
+                    if (titleA < titleB) return reverse ? 1 : -1;
+                    if (titleA > titleB) return reverse ? -1 : 1;
+                    return 0;
+                });
+            }
+
+            sortByArchivedDate(tasks, reverse = false) {
+                return tasks.sort((a, b) => {
+                    // Tasks with archivedAt dates come first
+                    const dateA = a.archivedAt ? new Date(a.archivedAt).getTime() : 0;
+                    const dateB = b.archivedAt ? new Date(b.archivedAt).getTime() : 0;
+                    
+                    // If both have archived dates, sort by date
+                    if (dateA && dateB) {
+                        return reverse ? (dateA - dateB) : (dateB - dateA);
+                    }
+                    // Tasks without archived dates go to the end
+                    if (!dateA && dateB) return 1;
+                    if (dateA && !dateB) return -1;
+                    return 0;
+                });
+            }
+            
+            // UX Enhancement: Sort by due date (soonest first, overdue at top)
+            sortByDueDate(tasks) {
+                return tasks.sort((a, b) => {
+                    const dateA = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+                    const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+                    
+                    // Tasks with due dates come first, sorted by date
+                    // Tasks without due dates go to the end
+                    return dateA - dateB;
+                });
+            }
+            
+            // UX Enhancement: Calculate due date status
+            getDueDateStatus(dueDate) {
+                if (!dueDate) return null;
+                
+                const now = new Date();
+                now.setHours(0, 0, 0, 0); // Reset to midnight for day comparison
+                
+                const due = new Date(dueDate);
+                due.setHours(0, 0, 0, 0);
+                
+                const diffTime = due - now;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                if (diffDays < 0) {
+                    return { 
+                        status: 'overdue', 
+                        color: '#f44336', 
+                        icon: '🔴', 
+                        text: `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''}`
+                    };
+                }
+                if (diffDays === 0) {
+                    return { 
+                        status: 'today', 
+                        color: '#ff9800', 
+                        icon: '⚠️', 
+                        text: 'Due today'
+                    };
+                }
+                if (diffDays === 1) {
+                    return { 
+                        status: 'tomorrow', 
+                        color: '#ffeb3b', 
+                        icon: '⏰', 
+                        text: 'Due tomorrow'
+                    };
+                }
+                if (diffDays <= 7) {
+                    return { 
+                        status: 'week', 
+                        color: '#4caf50', 
+                        icon: '📅', 
+                        text: `Due in ${diffDays} days`
+                    };
+                }
+                return { 
+                    status: 'future', 
+                    color: '#2196f3', 
+                    icon: '📅', 
+                    text: `Due in ${diffDays} days`
+                };
+            }
+            
+            // UX Enhancement: Get all unique tags across all tasks
+            getAllTags() {
+                const tagSet = new Set();
+                this.tasks.forEach(task => {
+                    if (task.tags && Array.isArray(task.tags)) {
+                        task.tags.forEach(tag => tagSet.add(tag));
+                    }
+                });
+                return Array.from(tagSet).sort();
+            }
+            
+            // UX Enhancement: Update tag autocomplete suggestions
+            updateTagSuggestions() {
+                const allTags = this.getAllTags();
+                const datalist = document.getElementById('tag-suggestions');
+                if (datalist) {
+                    datalist.innerHTML = allTags.map(tag => `<option value="${tag}">`).join('');
+                }
+            }
+            
+            // UX Enhancement: Generate color for tag (consistent hashing)
+            getTagColor(tag) {
+                // Simple hash function to generate consistent color per tag
+                let hash = 0;
+                for (let i = 0; i < tag.length; i++) {
+                    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                
+                // Generate HSL color with good saturation and lightness
+                const hue = Math.abs(hash % 360);
+                const saturation = 65 + (Math.abs(hash) % 20); // 65-85%
+                const lightness = 45 + (Math.abs(hash >> 8) % 15); // 45-60%
+                
+                return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+            }
+            
+            // UX Enhancement: Remove tag from task
+            removeTag(taskId, tag) {
+                const task = this.tasks.find(t => t.id === taskId);
+                if (task && task.tags) {
+                    task.tags = task.tags.filter(t => t !== tag);
+                    task.updatedAt = new Date().toISOString();
+                    this.saveTasks();
+                    this.render();
+                }
+            }
+            
+            // UX Enhancement: Drag & Drop Implementation
+            setupDragAndDrop() {
+                const dragHandles = document.querySelectorAll('.drag-handle[draggable="true"]');
+                let draggedElement = null;
+                let draggedTaskId = null;
+                
+                dragHandles.forEach(handle => {
+                    const taskItem = handle.closest('.task-item');
+                    if (!taskItem) return;
+                    
+                    const taskId = parseInt(taskItem.dataset.taskId);
+                    
+                    // Drag start - only from handle
+                    handle.addEventListener('dragstart', (e) => {
+                        draggedElement = taskItem;
+                        draggedTaskId = taskId;
+                        taskItem.classList.add('dragging');
+                        e.dataTransfer.effectAllowed = 'move';
+                        
+                        // Create a better drag image (the task item itself)
+                        e.dataTransfer.setDragImage(taskItem, 20, 20);
+                    });
+                    
+                    // Drag end
+                    handle.addEventListener('dragend', (e) => {
+                        taskItem.classList.remove('dragging');
+                        // Remove all drag-over classes
+                        document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+                            el.classList.remove('drag-over-top', 'drag-over-bottom');
+                        });
+                    });
+                });
+                
+                // Setup drop zones on all task items
+                const taskItems = document.querySelectorAll('.task-item.draggable');
+                taskItems.forEach(item => {
+                    // Drag over
+                    item.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        if (item === draggedElement) return;
+                        
+                        e.dataTransfer.dropEffect = 'move';
+                        
+                        // Determine if we should insert above or below
+                        const rect = item.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        const insertBefore = e.clientY < midpoint;
+                        
+                        // Remove existing drag-over classes from all items
+                        document.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+                            el.classList.remove('drag-over-top', 'drag-over-bottom');
+                        });
+                        
+                        // Add appropriate class to this item
+                        if (insertBefore) {
+                            item.classList.add('drag-over-top');
+                        } else {
+                            item.classList.add('drag-over-bottom');
+                        }
+                    });
+                    
+                    // Drag leave
+                    item.addEventListener('dragleave', (e) => {
+                        // Only remove if actually leaving (not entering child)
+                        if (!item.contains(e.relatedTarget)) {
+                            item.classList.remove('drag-over-top', 'drag-over-bottom');
+                        }
+                    });
+                    
+                    // Drop
+                    item.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        if (item === draggedElement || !draggedTaskId) return;
+                        
+                        const targetTaskId = parseInt(item.dataset.taskId);
+                        
+                        // Determine insertion point
+                        const rect = item.getBoundingClientRect();
+                        const midpoint = rect.top + rect.height / 2;
+                        const insertBefore = e.clientY < midpoint;
+                        
+                        // Reorder tasks
+                        this.reorderTask(draggedTaskId, targetTaskId, insertBefore);
+                        
+                        // Clean up
+                        item.classList.remove('drag-over-top', 'drag-over-bottom');
+                        draggedElement = null;
+                        draggedTaskId = null;
+                    });
+                });
+            }
+            
+            // UX Enhancement: Reorder task in custom order array
+            async reorderTask(sourceTaskId, targetTaskId, insertBefore) {
+                // Update customOrder array
+                const filteredTasks = await this.filterTasks();
+                const sortedTasks = this.sortTasks(filteredTasks);
+                
+                // Build new custom order from currently displayed tasks
+                const newOrder = sortedTasks.map(t => t.id);
+                
+                // Find indices
+                const sourceIdx = newOrder.indexOf(sourceTaskId);
+                const targetIdx = newOrder.indexOf(targetTaskId);
+                
+                if (sourceIdx === -1 || targetIdx === -1) return;
+                
+                // Remove source from array
+                newOrder.splice(sourceIdx, 1);
+                
+                // Calculate new insertion index
+                let insertIdx = newOrder.indexOf(targetTaskId);
+                if (!insertBefore) {
+                    insertIdx++;
+                }
+                
+                // Insert at new position
+                newOrder.splice(insertIdx, 0, sourceTaskId);
+                
+                // Update custom order
+                this.customOrder = newOrder;
+                localStorage.setItem('customTaskOrder', JSON.stringify(this.customOrder));
+                
+                console.log(`✨ Task ${sourceTaskId} moved ${insertBefore ? 'before' : 'after'} ${targetTaskId}`);
+                
+                // Re-render
+                this.render();
+            }
+
+            // Legacy method for backward compatibility
+            sortTasksByPriority(tasks) {
+                return this.sortByPriority(tasks, false);
+            }
+
+            // Export functionality
+            generateExportText() {
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    year: 'numeric',
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+
+                const nonArchived = this.tasks.filter(t => !t.archived);
+                const active = nonArchived.filter(t => !t.completed);
+                const completed = nonArchived.filter(t => t.completed);
+
+                let text = `TASK LIST SUMMARY\n`;
+                text += `Generated: ${dateStr}\n`;
+                text += `${'='.repeat(60)}\n\n`;
+
+                text += `OVERVIEW\n`;
+                text += `  Total Tasks: ${nonArchived.length}\n`;
+                text += `  Active: ${active.length}\n`;
+                text += `  Completed: ${completed.length}\n\n`;
+
+                if (active.length > 0) {
+                    text += `${'='.repeat(60)}\n`;
+                    text += `ACTIVE TASKS (${active.length})\n`;
+                    text += `${'='.repeat(60)}\n\n`;
+                    active.forEach((task, index) => {
+                        text += this.formatTaskForExport(task, index + 1, false);
+                    });
+                }
+
+                if (completed.length > 0) {
+                    text += `\n${'='.repeat(60)}\n`;
+                    text += `COMPLETED TASKS (${completed.length})\n`;
+                    text += `${'='.repeat(60)}\n\n`;
+                    completed.forEach((task, index) => {
+                        text += this.formatTaskForExport(task, index + 1, true);
+                    });
+                }
+
+                text += `\n${'='.repeat(60)}\n`;
+                text += `End of Task List\n`;
+
+                return text;
+            }
+
+            formatTaskForExport(task, number, isCompleted, isArchived = false) {
+                let text = `${number}. ${task.title}\n`;
+                
+                // Priority and Category line appears right after the title
+                text += `   Priority: ${task.priority.toUpperCase()} | Category: ${task.category}`;
+                
+                if (isCompleted && task.completedAt) {
+                    const date = new Date(task.completedAt).toLocaleDateString('en-US');
+                    text += ` | Completed: ${date}`;
+                }
+                
+                if (isArchived) {
+                    text += ` | 📦 ARCHIVED`;
+                }
+                
+                text += `\n`;
+                
+                // Content appears after priority/category line
+                if (task.content) {
+                    text += `   ${task.content.replace(/\n/g, '\n   ')}\n`;
+                }
+                
+                // Subtasks appear at the end
+                if (task.subtasks && task.subtasks.length > 0) {
+                    text += `   Subtasks:\n`;
+                    task.subtasks.forEach(subtask => {
+                        const check = subtask.completed ? '✓' : '○';
+                        const dateStr = subtask.completedAt ? 
+                            ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
+                        text += `     ${check} ${subtask.text}${dateStr}\n`;
+                    });
+                }
+                
+                text += `\n`;
+                return text;
+            }
+
+            showExportModal() {
+                // Performance Optimization: Use Web Worker for large exports
+                // This keeps UI responsive even with 500+ tasks
+                if (this.tasks.length > 100 && typeof Worker !== 'undefined') {
+                    this.generateExportWithWorker();
+                } else {
+                    // Fallback for small task lists or browsers without Worker support
+                    const exportText = this.generateExportText();
+                    document.getElementById('export-preview').textContent = exportText;
+                    document.getElementById('export-modal').style.display = 'block';
+                }
+            }
+            
+            // Performance Optimization: Generate export in Web Worker (non-blocking)
+            generateExportWithWorker() {
+                // Show modal immediately with loading indicator
+                document.getElementById('export-preview').textContent = '⏳ Generating export... (processing in background)';
+                document.getElementById('export-modal').style.display = 'block';
+                
+                // Create inline worker (keeps app as single file)
+                const workerCode = `
+                    self.onmessage = function(e) {
+                        const { tasks } = e.data;
+                        const exportText = generateExportText(tasks);
+                        self.postMessage({ exportText });
+                    };
+                    
+                    function generateExportText(tasks) {
+                        const now = new Date();
+                        const dateStr = now.toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            year: 'numeric',
+                            month: 'long', 
+                            day: 'numeric' 
+                        });
+                        
+                        const nonArchived = tasks.filter(t => !t.archived);
+                        const active = nonArchived.filter(t => !t.completed);
+                        const completed = nonArchived.filter(t => t.completed);
+                        
+                        let text = 'TASK LIST SUMMARY\\n';
+                        text += 'Generated: ' + dateStr + '\\n';
+                        text += '='.repeat(60) + '\\n\\n';
+                        
+                        text += 'OVERVIEW\\n';
+                        text += '  Total Tasks: ' + nonArchived.length + '\\n';
+                        text += '  Active: ' + active.length + '\\n';
+                        text += '  Completed: ' + completed.length + '\\n\\n';
+                        
+                        if (active.length > 0) {
+                            text += '='.repeat(60) + '\\n';
+                            text += 'ACTIVE TASKS (' + active.length + ')\\n';
+                            text += '='.repeat(60) + '\\n\\n';
+                            active.forEach((task, index) => {
+                                text += formatTaskForExport(task, index + 1, false);
+                            });
+                        }
+                        
+                        if (completed.length > 0) {
+                            text += '\\n' + '='.repeat(60) + '\\n';
+                            text += 'COMPLETED TASKS (' + completed.length + ')\\n';
+                            text += '='.repeat(60) + '\\n\\n';
+                            completed.forEach((task, index) => {
+                                text += formatTaskForExport(task, index + 1, true);
+                            });
+                        }
+                        
+                        text += '\\n' + '='.repeat(60) + '\\n';
+                        text += 'End of Task List\\n';
+                        
+                        return text;
+                    }
+                    
+                    function formatTaskForExport(task, number, isCompleted) {
+                        let text = number + '. ' + task.title + '\\n';
+                        text += '   Priority: ' + task.priority.toUpperCase() + ' | Category: ' + task.category;
+                        
+                        if (isCompleted && task.completedAt) {
+                            const date = new Date(task.completedAt).toLocaleDateString('en-US', { 
+                                month: 'short', day: 'numeric', year: 'numeric' 
+                            });
+                            text += ' | Completed: ' + date;
+                        }
+                        
+                        text += '\\n';
+                        
+                        if (task.content) {
+                            const lines = task.content.split('\\n');
+                            lines.forEach(line => {
+                                text += '   ' + line + '\\n';
+                            });
+                        }
+                        
+                        if (task.subtasks && task.subtasks.length > 0) {
+                            text += '   Subtasks:\\n';
+                            task.subtasks.forEach(subtask => {
+                                const checkbox = subtask.completed ? '[✓]' : '[ ]';
+                                text += '     ' + checkbox + ' ' + subtask.text + '\\n';
+                            });
+                        }
+                        
+                        text += '\\n';
+                        return text;
+                    }
+                `;
+                
+                const blob = new Blob([workerCode], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                const worker = new Worker(workerUrl);
+                
+                worker.onmessage = (e) => {
+                    const { exportText } = e.data;
+                    document.getElementById('export-preview').textContent = exportText;
+                    worker.terminate();
+                    URL.revokeObjectURL(workerUrl);
+                    console.log('✨ Export generated in Web Worker (UI stayed responsive)');
+                };
+                
+                worker.onerror = (err) => {
+                    console.error('Worker error, falling back to main thread:', err);
+                    const exportText = this.generateExportText();
+                    document.getElementById('export-preview').textContent = exportText;
+                    worker.terminate();
+                    URL.revokeObjectURL(workerUrl);
+                };
+                
+                // Send tasks to worker
+                worker.postMessage({ tasks: this.tasks });
+            }
+
+            closeExportModal() {
+                document.getElementById('export-modal').style.display = 'none';
+            }
+
+            async copyExportToClipboard() {
+                const text = document.getElementById('export-preview').textContent;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    const btn = document.getElementById('copy-export-btn');
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    btn.style.background = '#3fb950';
+                    
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 2000);
+                } catch (err) {
+                    alert('Failed to copy to clipboard. Please select and copy the text manually.');
+                }
+            }
+
+            // Backup functionality
+            backupTasks() {
+                const backupData = {
+                    version: '1.0',
+                    timestamp: new Date().toISOString(),
+                    tasks: this.tasks
+                };
+
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `tasks-backup-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // Show success feedback
+                const backupBtn = document.getElementById('backup-btn');
+                const originalText = backupBtn.textContent;
+                backupBtn.textContent = 'Backed Up!';
+                backupBtn.style.background = '#3fb950';
+                
+                setTimeout(() => {
+                    backupBtn.textContent = originalText;
+                    backupBtn.style.background = '';
+                }, 2000);
+            }
+
+            importTasks(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const content = e.target.result;
+                        const backupData = JSON.parse(content);
+                        
+                        // Validate backup data
+                        if (!backupData.tasks || !Array.isArray(backupData.tasks)) {
+                            throw new Error('Invalid backup file format');
+                        }
+
+                        // Ask user how to import
+                        const choice = confirm(
+                            `Import ${backupData.tasks.length} task(s) from backup?\n\n` +
+                            `Click OK to MERGE with existing tasks\n` +
+                            `Click Cancel to REPLACE all existing tasks`
+                        );
+
+                        if (choice) {
+                            // Merge: Add imported tasks to existing ones
+                            // Update IDs to avoid conflicts
+                            const maxId = this.tasks.length > 0 
+                                ? Math.max(...this.tasks.map(t => t.id)) 
+                                : Date.now();
+                            
+                            const importedTasks = backupData.tasks.map((task, index) => ({
+                                ...task,
+                                id: maxId + index + 1
+                            }));
+
+                            this.tasks = [...this.tasks, ...importedTasks];
+                            alert(`Successfully imported ${importedTasks.length} task(s)! Tasks have been merged with existing ones.`);
+                        } else {
+                            // Replace: Replace all existing tasks
+                            if (confirm('⚠️ This will DELETE all existing tasks and replace them with the backup. Are you sure?')) {
+                                this.tasks = backupData.tasks;
+                                alert(`Successfully imported ${this.tasks.length} task(s)! All previous tasks have been replaced.`);
+                            } else {
+                                alert('Import cancelled.');
+                                event.target.value = ''; // Reset file input
+                                return;
+                            }
+                        }
+
+                        this.saveTasks();
+                        this.render();
+
+                        // Show success feedback
+                        const importBtn = document.getElementById('import-btn');
+                        const originalText = importBtn.textContent;
+                        importBtn.textContent = 'Imported!';
+                        importBtn.style.background = '#3fb950';
+                        
+                        setTimeout(() => {
+                            importBtn.textContent = originalText;
+                            importBtn.style.background = '';
+                        }, 2000);
+
+                    } catch (err) {
+                        console.error('Import error:', err);
+                        alert('Failed to import tasks. Please make sure the file is a valid task backup file.');
+                    }
+                    
+                    // Reset file input
+                    event.target.value = '';
+                };
+
+                reader.onerror = () => {
+                    alert('Failed to read file. Please try again.');
+                    event.target.value = '';
+                };
+
+                reader.readAsText(file);
+            }
+
+            // Auto-backup functionality
+            async toggleAutoBackup() {
+                if (this.autoBackupEnabled) {
+                    // Confirm before disabling
+                    const confirmed = confirm('Are you sure you want to disable auto-backup?\n\nYour tasks will still be saved in your browser, but automatic file backups will stop.');
+                    if (!confirmed) {
+                        return;
+                    }
+                    
+                    // Disable auto-backup
+                    this.stopAutoBackup();
+                    this.autoBackupEnabled = false;
+                    this.directoryHandle = null;
+                    this.autoBackupDirName = null;
+                    localStorage.setItem('autoBackupEnabled', 'false');
+                    localStorage.removeItem('autoBackupDirName');
+                    
+                    // Remove directory handle from IndexedDB
+                    await this.removeDirectoryHandle();
+                    
+                    this.updateAutoBackupButton();
+                    this.updateFooter();
+                    alert('Auto-backup has been disabled.\n\nYour tasks are still saved in your browser.\nUse "Backup Tasks" for manual backups.');
+                } else {
+                    // Enable auto-backup
+                    try {
+                        // Check if File System Access API is supported
+                        if (!('showDirectoryPicker' in window)) {
+                            alert('⚠️ Auto-backup is only supported in Chrome, Edge, and other Chromium-based browsers.\n\nYour current browser doesn\'t support this feature. Please use manual backup instead.');
+                            return;
+                        }
+
+                        // Request directory access
+                        this.directoryHandle = await window.showDirectoryPicker({
+                            mode: 'readwrite',
+                            startIn: 'documents'
+                        });
+
+                        this.autoBackupEnabled = true;
+                        this.autoBackupDirName = this.directoryHandle.name;
+                        localStorage.setItem('autoBackupEnabled', 'true');
+                        localStorage.setItem('autoBackupDirName', this.autoBackupDirName);
+                        
+                        // Save directory handle to IndexedDB for persistence
+                        await this.saveDirectoryHandle(this.directoryHandle);
+                        
+                        // Perform initial backup
+                        await this.performAutoBackup();
+                        
+                        // Start hourly backups
+                        this.startAutoBackup();
+                        
+                        this.updateAutoBackupButton();
+                        this.updateFooter();
+                        alert('✅ Auto-backup enabled!\n\nYour tasks will be automatically saved to:\n📄 ' + this.autoBackupDirName + '/tasks-auto-backup.json\n\nThe file will be updated:\n• Every hour\n• When you close the browser\n\n✨ Folder access will persist across page reloads!\n\n⚠️ This overwrites the same file each time.\nUse "Backup Tasks" for timestamped safety backups!');
+                    } catch (err) {
+                        if (err.name === 'AbortError') {
+                            alert('Auto-backup setup cancelled.');
+                        } else {
+                            console.error('Auto-backup setup error:', err);
+                            alert('Failed to set up auto-backup. Please try again.');
+                        }
+                    }
+                }
+            }
+
+            startAutoBackup() {
+                // Clear any existing interval
+                if (this.autoBackupInterval) {
+                    clearInterval(this.autoBackupInterval);
+                }
+                
+                // Set up hourly backup (3600000 ms = 1 hour)
+                this.autoBackupInterval = setInterval(() => {
+                    this.performAutoBackup();
+                }, 3600000);
+            }
+
+            stopAutoBackup() {
+                if (this.autoBackupInterval) {
+                    clearInterval(this.autoBackupInterval);
+                    this.autoBackupInterval = null;
+                }
+            }
+
+            async performAutoBackup() {
+                if (!this.directoryHandle) {
+                    return;
+                }
+
+                try {
+                    // Request permission if needed
+                    const permission = await this.directoryHandle.queryPermission({ mode: 'readwrite' });
+                    if (permission !== 'granted') {
+                        const newPermission = await this.directoryHandle.requestPermission({ mode: 'readwrite' });
+                        if (newPermission !== 'granted') {
+                            console.warn('Auto-backup: Permission denied');
+                            return;
+                        }
+                    }
+
+                    // Create backup data
+                    const backupData = {
+                        version: '1.0',
+                        timestamp: new Date().toISOString(),
+                        tasks: this.tasks
+                    };
+
+                    // Use a single static filename (overwrites each time)
+                    const filename = 'tasks-auto-backup.json';
+
+                    // Write file to directory (overwrites existing)
+                    const fileHandle = await this.directoryHandle.getFileHandle(filename, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(JSON.stringify(backupData, null, 2));
+                    await writable.close();
+
+                    console.log(`✅ Auto-backup saved: ${filename}`);
+                } catch (err) {
+                    console.error('Auto-backup error:', err);
+                    // Don't show alert to user, just log the error
+                }
+            }
+
+            updateAutoBackupButton() {
+                const btn = document.getElementById('auto-backup-btn');
+                if (this.autoBackupEnabled) {
+                    btn.textContent = 'Auto-Backup ON';
+                    btn.classList.add('enabled');
+                    btn.title = 'Auto-backup is enabled. Click to disable.';
+                } else {
+                    btn.textContent = 'Auto-Backup';
+                    btn.classList.remove('enabled');
+                    btn.title = 'Enable automatic hourly backups to a single file (overwrites each time)';
+                }
+                this.updateFooter();
+            }
+
+            updateFooter() {
+                const footer = document.getElementById('footer-text');
+                let storageText = '';
+                
+                // Show storage method
+                if (this.useFileStorage && this.fileStorageReady) {
+                    const dirName = localStorage.getItem('taskDirectoryName') || 'File';
+                    storageText = `📁 <span style="color: #4ade80;">${dirName}/tasks.json</span>`;
+                } else if (this.useFileStorage && !this.fileStorageReady) {
+                    storageText = '⚠️ <span style="color: #fbbf24;">File Storage (permission needed)</span>';
+                } else {
+                    storageText = '🌐 <span style="color: #6b7280;">Browser Storage</span>';
+                }
+                
+                const baseText = `<strong>Task List Manager</strong> • ${storageText} • Version 1.0`;
+                
+                if (this.autoBackupEnabled && this.autoBackupDirName) {
+                    footer.innerHTML = `<strong>Task List Manager</strong> • ${storageText} • Auto-backup: <code style="background: rgba(34, 197, 94, 0.15); color: #4ade80; padding: 2px 6px; border-radius: 3px; font-size: 12px;">${this.autoBackupDirName}/tasks-auto-backup.json</code> • Version 1.0`;
+                } else if (this.autoBackupEnabled && !this.directoryHandle) {
+                    footer.innerHTML = `<strong>Task List Manager</strong> • ${storageText} • <span style="color: #fbbf24;">⚠️ Auto-backup enabled but needs folder access (click Auto-Backup button)</span> • Version 1.0`;
+                } else {
+                    footer.innerHTML = baseText;
+                }
+            }
+            
+            updateFileStorageIndicator(success = null) {
+                const indicator = document.getElementById('file-storage-indicator');
+                if (!indicator) return;
+                
+                if (this.useFileStorage && this.fileStorageReady) {
+                    indicator.innerHTML = '📁 File';
+                    indicator.style.background = 'rgba(34, 197, 94, 0.15)';
+                    indicator.style.color = '#4ade80';
+                    indicator.title = 'Tasks saved to local file';
+                } else if (this.useFileStorage && !this.fileStorageReady) {
+                    indicator.innerHTML = '⚠️ File';
+                    indicator.style.background = 'rgba(251, 191, 36, 0.15)';
+                    indicator.style.color = '#fbbf24';
+                    indicator.title = 'File storage enabled but permission needed';
+                } else {
+                    indicator.innerHTML = '🌐 Browser';
+                    indicator.style.background = 'rgba(107, 114, 128, 0.15)';
+                    indicator.style.color = '#6b7280';
+                    indicator.title = 'Tasks saved in browser (localStorage)';
+                }
+                
+                // Flash indicator on save
+                if (success !== null) {
+                    indicator.style.transform = 'scale(1.1)';
+                    setTimeout(() => {
+                        indicator.style.transform = 'scale(1)';
+                    }, 200);
+                }
+            }
+
+            // Open task in comprehensive editor
+            openTaskEditor(id) {
+                const task = this.tasks.find(t => t.id === id);
+                if (!task) return;
+
+                // Store task in a temporary location for the editor
+                localStorage.setItem('taskEditorData', JSON.stringify({
+                    task: task,
+                    timestamp: Date.now()
+                }));
+
+                // Open editor in a new tab
+                const editorWindow = window.open('', '_blank');
+                
+                if (!editorWindow) {
+                    alert('Please allow popups for this site to use the task editor.');
+                    return;
+                }
+
+                // Create editor HTML
+                editorWindow.document.write(this.generateEditorHTML(task));
+                editorWindow.document.close();
+
+                // Set up listener for changes from editor
+                const messageHandler = (event) => {
+                    if (event.data.type === 'taskUpdate' && event.data.taskId === id) {
+                        console.log('Received task update:', event.data);
+                        const updatedTask = event.data.task;
+                        const taskIndex = this.tasks.findIndex(t => t.id === id);
+                        if (taskIndex !== -1) {
+                            console.log('Before update:', JSON.parse(JSON.stringify(this.tasks[taskIndex])));
+                            this.tasks[taskIndex] = {
+                                ...this.tasks[taskIndex],
+                                ...updatedTask,
+                                updatedAt: new Date().toISOString()
+                            };
+                            console.log('After update:', JSON.parse(JSON.stringify(this.tasks[taskIndex])));
+                            this.saveTasks();
+                            this.render();
+                        }
+                        // Remove the event listener after processing the update
+                        window.removeEventListener('message', messageHandler);
+                    }
+                };
+
+                window.addEventListener('message', messageHandler);
+                
+                // Also remove listener when editor window is closed
+                const checkWindowClosed = setInterval(() => {
+                    if (editorWindow.closed) {
+                        window.removeEventListener('message', messageHandler);
+                        clearInterval(checkWindowClosed);
+                    }
+                }, 500);
+            }
+
+            generateEditorHTML(task) {
+                const subtasksHTML = task.subtasks.map((subtask, idx) => {
+                    return `
+                        <div class="editor-subtask-item" 
+                             data-subtask-id="${subtask.id}"
+                             draggable="true"
+                             ondragstart="handleEditorSubtaskDragStart(event)"
+                             ondragend="handleEditorSubtaskDragEnd(event)"
+                             ondragover="handleEditorSubtaskDragOver(event)"
+                             ondragleave="handleEditorSubtaskDragLeave(event)"
+                             ondrop="handleEditorSubtaskDrop(event)">
+                            <div style="display: flex; gap: 12px; align-items: start;">
+                                <span class="editor-drag-handle">⋮⋮</span>
+                                <input 
+                                    type="checkbox"
+                                    class="editor-task-checkbox"
+                                    ${subtask.completed ? 'checked' : ''}
+                                    onchange="toggleSubtaskInEditor(${subtask.id})"
+                                    style="width: 20px; height: 20px; cursor: pointer; margin-top: 4px;"
+                                >
+                                <textarea 
+                                    class="subtask-editor-text"
+                                    data-subtask-id="${subtask.id}"
+                                    style="flex: 1; padding: 10px; border: 2px solid #30363d; border-radius: 6px; font-size: 14px; background: #0d1117; color: #e0e0e0; resize: vertical; min-height: 60px; font-family: inherit;"
+                                >${this.escapeHtml(subtask.text)}</textarea>
+                                <button 
+                                    onclick="removeSubtaskInEditor(${subtask.id})"
+                                    style="padding: 8px 12px; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid #ef4444; border-radius: 4px; font-size: 12px; cursor: pointer;"
+                                >Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+<!DOCTYPE html>
+<html lang="en" ${this.currentTheme !== 'orange' ? `data-theme="${this.currentTheme}"` : ''}>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Task: ${this.escapeHtml(task.title)}</title>
+    <style>
+        :root {
+            --primary-orange: #ffa834;
+            --primary-orange-dark: #d67d20;
+            --primary-orange-darker: #8a4d13;
+            --primary-orange-darkest: #4a2909;
+            --gradient-background: linear-gradient(to right, #d67d20 0%, #8a4d13 5%, #4a2909 10%, #000000 15%, #000000 85%, #4a2909 90%, #8a4d13 95%, #d67d20 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #d67d20 100%);
+        }
+        [data-theme="blue"] {
+            --primary-orange: #60a5fa;
+            --primary-orange-dark: #3b82f6;
+            --primary-orange-darker: #2563eb;
+            --primary-orange-darkest: #1e40af;
+            --gradient-background: linear-gradient(to right, #3b82f6 0%, #2563eb 5%, #1e40af 10%, #000000 15%, #000000 85%, #1e40af 90%, #2563eb 95%, #3b82f6 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #3b82f6 100%);
+        }
+        [data-theme="purple"] {
+            --primary-orange: #a78bfa;
+            --primary-orange-dark: #8b5cf6;
+            --primary-orange-darker: #7c3aed;
+            --primary-orange-darkest: #6d28d9;
+            --gradient-background: linear-gradient(to right, #8b5cf6 0%, #7c3aed 5%, #6d28d9 10%, #000000 15%, #000000 85%, #6d28d9 90%, #7c3aed 95%, #8b5cf6 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #8b5cf6 100%);
+        }
+        [data-theme="green"] {
+            --primary-orange: #4ade80;
+            --primary-orange-dark: #22c55e;
+            --primary-orange-darker: #16a34a;
+            --primary-orange-darkest: #15803d;
+            --gradient-background: linear-gradient(to right, #22c55e 0%, #16a34a 5%, #15803d 10%, #000000 15%, #000000 85%, #15803d 90%, #16a34a 95%, #22c55e 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #22c55e 100%);
+        }
+        [data-theme="red"] {
+            --primary-orange: #f87171;
+            --primary-orange-dark: #ef4444;
+            --primary-orange-darker: #dc2626;
+            --primary-orange-darkest: #b91c1c;
+            --gradient-background: linear-gradient(to right, #ef4444 0%, #dc2626 5%, #b91c1c 10%, #000000 15%, #000000 85%, #b91c1c 90%, #dc2626 95%, #ef4444 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #ef4444 100%);
+        }
+        [data-theme="pink"] {
+            --primary-orange: #f9a8d4;
+            --primary-orange-dark: #ec4899;
+            --primary-orange-darker: #db2777;
+            --primary-orange-darkest: #be185d;
+            --gradient-background: linear-gradient(to right, #ec4899 0%, #db2777 5%, #be185d 10%, #000000 15%, #000000 85%, #be185d 90%, #db2777 95%, #ec4899 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #ec4899 100%);
+        }
+        [data-theme="teal"] {
+            --primary-orange: #2dd4bf;
+            --primary-orange-dark: #14b8a6;
+            --primary-orange-darker: #0d9488;
+            --primary-orange-darkest: #0f766e;
+            --gradient-background: linear-gradient(to right, #14b8a6 0%, #0d9488 5%, #0f766e 10%, #000000 15%, #000000 85%, #0f766e 90%, #0d9488 95%, #14b8a6 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #14b8a6 100%);
+        }
+        [data-theme="golden"] {
+            --primary-orange: #fbbf24;
+            --primary-orange-dark: #f59e0b;
+            --primary-orange-darker: #d97706;
+            --primary-orange-darkest: #b45309;
+            --gradient-background: linear-gradient(to right, 
+                #b45309 0%, 
+                #d97706 2%, 
+                #f59e0b 4%, 
+                #fbbf24 6%, 
+                #fb923c 8%, 
+                #f97316 10%, 
+                #ea580c 12%, 
+                #dc2626 14%, 
+                #0a0805 18%, 
+                #0a0805 82%, 
+                #dc2626 86%, 
+                #ea580c 88%, 
+                #f97316 90%, 
+                #fb923c 92%, 
+                #fbbf24 94%, 
+                #f59e0b 96%, 
+                #d97706 98%, 
+                #b45309 100%);
+            --gradient-header: linear-gradient(135deg, #1a1410 0%, #2d2416 25%, #3d2a14 50%, #2a1810 75%, #1a1410 100%);
+        }
+        [data-theme="cyan"] {
+            --primary-orange: #22d3ee;
+            --primary-orange-dark: #06b6d4;
+            --primary-orange-darker: #0891b2;
+            --primary-orange-darkest: #0e7490;
+            --gradient-background: linear-gradient(to right, #06b6d4 0%, #0891b2 5%, #0e7490 10%, #000000 15%, #000000 85%, #0e7490 90%, #0891b2 95%, #06b6d4 100%);
+            --gradient-header: linear-gradient(135deg, #000000 0%, #06b6d4 100%);
+        }
+
+        [data-theme="synthwave"] {
+            --primary-orange: #a78bfa;
+            --primary-orange-dark: #8b5cf6;
+            --primary-orange-darker: #7c3aed;
+            --primary-orange-darkest: #6d28d9;
+            --gradient-background: linear-gradient(to right, 
+                #7c3aed 0%, 
+                #a855f7 3%, 
+                #ec4899 6%, 
+                #f43f5e 9%, 
+                #f59e0b 12%, 
+                #0a0a0a 18%, 
+                #0a0a0a 82%, 
+                #f59e0b 88%, 
+                #f43f5e 91%, 
+                #ec4899 94%, 
+                #a855f7 97%, 
+                #7c3aed 100%);
+            --gradient-header: linear-gradient(135deg, #1a0033 0%, #2d1b4e 50%, #1a0033 100%);
+        }
+
+        [data-theme="prism"] {
+            --primary-orange: #2dd4bf;
+            --primary-orange-dark: #14b8a6;
+            --primary-orange-darker: #0d9488;
+            --primary-orange-darkest: #0f766e;
+            --gradient-background: linear-gradient(to right, 
+                #0d9488 0%, 
+                #14b8a6 2%, 
+                #2dd4bf 4%, 
+                #06b6d4 6%, 
+                #3b82f6 8%, 
+                #6366f1 10%, 
+                #8b5cf6 12%, 
+                #a855f7 14%, 
+                #020408 18%, 
+                #020408 82%, 
+                #a855f7 86%, 
+                #8b5cf6 88%, 
+                #6366f1 90%, 
+                #3b82f6 92%, 
+                #06b6d4 94%, 
+                #2dd4bf 96%, 
+                #14b8a6 98%, 
+                #0d9488 100%);
+            --gradient-header: linear-gradient(135deg, #0a1929 0%, #1e3a5f 25%, #1a4d4d 50%, #2d1b4e 75%, #0a1929 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* Editor checkbox styling - styled like Edit/Editor buttons */
+        .editor-task-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffa834;
+            border-radius: 4px;
+            background: rgba(255, 168, 52, 0.15);
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        .editor-task-checkbox:hover {
+            background: rgba(255, 168, 52, 0.25);
+            transform: scale(1.05);
+        }
+
+        .editor-task-checkbox:checked {
+            background: #ffa834;
+        }
+
+        .editor-task-checkbox:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #000;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        /* Theme-specific editor checkbox colors */
+        [data-theme="blue"] .editor-task-checkbox {
+            border-color: #60a5fa;
+            background: rgba(96, 165, 250, 0.15);
+        }
+        [data-theme="blue"] .editor-task-checkbox:hover {
+            background: rgba(96, 165, 250, 0.25);
+        }
+        [data-theme="blue"] .editor-task-checkbox:checked {
+            background: #60a5fa;
+        }
+
+        [data-theme="purple"] .editor-task-checkbox {
+            border-color: #a78bfa;
+            background: rgba(167, 139, 250, 0.15);
+        }
+        [data-theme="purple"] .editor-task-checkbox:hover {
+            background: rgba(167, 139, 250, 0.25);
+        }
+        [data-theme="purple"] .editor-task-checkbox:checked {
+            background: #a78bfa;
+        }
+
+        [data-theme="green"] .editor-task-checkbox {
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.15);
+        }
+        [data-theme="green"] .editor-task-checkbox:hover {
+            background: rgba(74, 222, 128, 0.25);
+        }
+        [data-theme="green"] .editor-task-checkbox:checked {
+            background: #4ade80;
+        }
+
+        [data-theme="red"] .editor-task-checkbox {
+            border-color: #f87171;
+            background: rgba(248, 113, 113, 0.15);
+        }
+        [data-theme="red"] .editor-task-checkbox:hover {
+            background: rgba(248, 113, 113, 0.25);
+        }
+        [data-theme="red"] .editor-task-checkbox:checked {
+            background: #f87171;
+        }
+
+        [data-theme="pink"] .editor-task-checkbox {
+            border-color: #f9a8d4;
+            background: rgba(249, 168, 212, 0.15);
+        }
+        [data-theme="pink"] .editor-task-checkbox:hover {
+            background: rgba(249, 168, 212, 0.25);
+        }
+        [data-theme="pink"] .editor-task-checkbox:checked {
+            background: #f9a8d4;
+        }
+
+        [data-theme="teal"] .editor-task-checkbox {
+            border-color: #2dd4bf;
+            background: rgba(45, 212, 191, 0.15);
+        }
+        [data-theme="teal"] .editor-task-checkbox:hover {
+            background: rgba(45, 212, 191, 0.25);
+        }
+        [data-theme="teal"] .editor-task-checkbox:checked {
+            background: #2dd4bf;
+        }
+
+        [data-theme="golden"] .editor-task-checkbox {
+            border-color: #fbbf24;
+            background: rgba(251, 191, 36, 0.15);
+        }
+        [data-theme="golden"] .editor-task-checkbox:hover {
+            background: rgba(249, 115, 22, 0.25);
+        }
+        [data-theme="golden"] .editor-task-checkbox:checked {
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 20%, #fb923c 40%, #f97316 60%, #ea580c 80%, #dc2626 100%);
+        }
+
+        [data-theme="cyan"] .editor-task-checkbox {
+            border-color: #22d3ee;
+            background: rgba(34, 211, 238, 0.15);
+        }
+        [data-theme="cyan"] .editor-task-checkbox:hover {
+            background: rgba(34, 211, 238, 0.25);
+        }
+        [data-theme="cyan"] .editor-task-checkbox:checked {
+            background: #22d3ee;
+        }
+        
+        [data-theme="synthwave"] .editor-task-checkbox {
+            border-color: #a78bfa;
+            background: rgba(167, 139, 250, 0.15);
+        }
+        [data-theme="synthwave"] .editor-task-checkbox:hover {
+            background: rgba(236, 72, 153, 0.25);
+        }
+        [data-theme="synthwave"] .editor-task-checkbox:checked {
+            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #f59e0b 100%);
+        }
+        
+        [data-theme="prism"] .editor-task-checkbox {
+            border-color: #2dd4bf;
+            background: rgba(45, 212, 191, 0.15);
+        }
+        [data-theme="prism"] .editor-task-checkbox:hover {
+            background: rgba(139, 92, 246, 0.25);
+        }
+        [data-theme="prism"] .editor-task-checkbox:checked {
+            background: linear-gradient(135deg, #2dd4bf 0%, #06b6d4 20%, #3b82f6 40%, #8b5cf6 60%, #a855f7 80%, #ec4899 100%);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--gradient-background);
+            color: #e0e0e0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .editor-container {
+            max-width: 95%;
+            margin: 0 auto;
+            background: #161b22;
+            border-radius: 12px;
+            border: 2px solid #30363d;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+        }
+        .editor-header {
+            background: var(--gradient-header);
+            padding: 24px;
+            border-bottom: 2px solid #30363d;
+        }
+        .editor-header h1 {
+            font-size: 24px;
+            color: var(--primary-orange);
+            margin-bottom: 8px;
+        }
+        .editor-header {
+            background: var(--gradient-header);
+            padding: 24px;
+            border-bottom: 2px solid #30363d;
+        }
+        .editor-header h1 {
+            font-size: 24px;
+            color: var(--primary-orange);
+            margin-bottom: 8px;
+        }
+        .editor-header p {
+            font-size: 14px;
+            color: #8b949e;
+        }
+        .editor-header .task-id {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #8b949e;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+        }
+        .editor-header .task-id:hover {
+            background: rgba(255, 168, 52, 0.1);
+            color: var(--primary-orange);
+            box-shadow: 0 0 8px rgba(255, 168, 52, 0.3);
+        }
+        .editor-header .task-id.copied {
+            color: #3fb950;
+            box-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
+        }
+        [data-theme="blue"] .editor-header .task-id:hover {
+            background: rgba(96, 165, 250, 0.1);
+            color: #60a5fa;
+            box-shadow: 0 0 8px rgba(96, 165, 250, 0.3);
+        }
+        [data-theme="purple"] .editor-header .task-id:hover {
+            background: rgba(167, 139, 250, 0.1);
+            color: #a78bfa;
+            box-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+        }
+        [data-theme="green"] .editor-header .task-id:hover {
+            background: rgba(74, 222, 128, 0.1);
+            color: #4ade80;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.3);
+        }
+        [data-theme="red"] .editor-header .task-id:hover {
+            background: rgba(248, 113, 113, 0.1);
+            color: #f87171;
+            box-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+        }
+        [data-theme="pink"] .editor-header .task-id:hover {
+            background: rgba(249, 168, 212, 0.1);
+            color: #f9a8d4;
+            box-shadow: 0 0 8px rgba(249, 168, 212, 0.3);
+        }
+        [data-theme="teal"] .editor-header .task-id:hover {
+            background: rgba(45, 212, 191, 0.1);
+            color: #2dd4bf;
+            box-shadow: 0 0 8px rgba(45, 212, 191, 0.3);
+        }
+        [data-theme="golden"] .editor-header .task-id:hover {
+            background: rgba(251, 191, 36, 0.1);
+            color: #fbbf24;
+            box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+        }
+        [data-theme="cyan"] .editor-header .task-id:hover {
+            background: rgba(34, 211, 238, 0.1);
+            color: #22d3ee;
+            box-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
+        }
+        [data-theme="synthwave"] .editor-header .task-id:hover {
+            background: rgba(167, 139, 250, 0.1);
+            color: #a78bfa;
+            box-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+        }
+        [data-theme="prism"] .editor-header .task-id:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.1) 0%, rgba(59, 130, 246, 0.1) 50%, rgba(139, 92, 246, 0.1) 100%);
+            color: #60a5fa;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+        }
+        .editor-last-updated {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .editor-last-updated strong {
+            color: var(--primary-orange);
+        }
+        .editor-content {
+            padding: 24px;
+        }
+        .editor-field {
+            margin-bottom: 24px;
+        }
+        .editor-field label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--primary-orange);
+            font-size: 14px;
+        }
+        .editor-field input[type="text"],
+        .editor-field textarea,
+        .editor-field select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #30363d;
+            border-radius: 8px;
+            font-size: 15px;
+            background: #0d1117;
+            color: #e0e0e0;
+            font-family: inherit;
+        }
+        .editor-field input[type="text"]:focus,
+        .editor-field textarea:focus,
+        .editor-field select:focus {
+            outline: none;
+            border-color: var(--primary-orange);
+        }
+        .editor-field textarea {
+            resize: vertical;
+            min-height: 150px;
+        }
+        .editor-subtasks {
+            background: #0d1117;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #30363d;
+        }
+        .editor-subtasks h3 {
+            margin-bottom: 16px;
+            color: var(--primary-orange);
+            font-size: 16px;
+        }
+        .editor-subtask-item {
+            width: 100%; /* Maximize horizontal space */
+            cursor: move;
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: background 0.2s;
+        }
+        .editor-subtask-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        .editor-subtask-item.dragging {
+            opacity: 0.5;
+            background: rgba(255, 168, 52, 0.2);
+            border-color: var(--primary-orange);
+        }
+        .editor-subtask-item.drag-over {
+            border-top: 3px solid var(--primary-orange);
+        }
+        .editor-drag-handle {
+            cursor: grab;
+            color: #6e7681;
+            font-size: 16px;
+            user-select: none;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        .editor-drag-handle:active {
+            cursor: grabbing;
+        }
+        #subtasks-container {
+            width: 100%; /* Maximize horizontal space */
+        }
+        .editor-actions {
+            display: flex;
+            gap: 12px;
+            padding: 24px;
+            border-top: 2px solid #30363d;
+            background: #0d1117;
+        }
+        .editor-btn {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .editor-btn-primary {
+            background: rgba(255, 168, 52, 0.2);
+            color: var(--primary-orange);
+            border: 2px solid var(--primary-orange);
+        }
+        .editor-btn-primary:hover {
+            background: rgba(255, 168, 52, 0.4);
+            transform: translateY(-2px);
+        }
+        .editor-btn-secondary {
+            background: #21262d;
+            color: #e0e0e0;
+            border: 2px solid #30363d;
+        }
+        .editor-btn-secondary:hover {
+            background: #30363d;
+        }
+        .editor-field-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 768px) {
+            .editor-field-group {
+                grid-template-columns: 1fr;
+            }
+        }
+        .add-subtask-btn {
+            width: 100%;
+            padding: 10px;
+            background: rgba(255, 168, 52, 0.15);
+            color: var(--primary-orange);
+            border: 2px solid var(--primary-orange);
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+            transition: all 0.2s;
+        }
+        .add-subtask-btn:hover {
+            background: rgba(255, 168, 52, 0.25);
+            transform: translateY(-2px);
+        }
+        [data-theme="blue"] .add-subtask-btn {
+            background: rgba(96, 165, 250, 0.15);
+            color: #60a5fa;
+            border-color: #60a5fa;
+        }
+        [data-theme="blue"] .add-subtask-btn:hover {
+            background: rgba(96, 165, 250, 0.25);
+        }
+        [data-theme="purple"] .add-subtask-btn {
+            background: rgba(167, 139, 250, 0.15);
+            color: #a78bfa;
+            border-color: #a78bfa;
+        }
+        [data-theme="purple"] .add-subtask-btn:hover {
+            background: rgba(167, 139, 250, 0.25);
+        }
+        [data-theme="green"] .add-subtask-btn {
+            background: rgba(74, 222, 128, 0.15);
+            color: #4ade80;
+            border-color: #4ade80;
+        }
+        [data-theme="green"] .add-subtask-btn:hover {
+            background: rgba(74, 222, 128, 0.25);
+        }
+        [data-theme="red"] .add-subtask-btn {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+            border-color: #f87171;
+        }
+        [data-theme="red"] .add-subtask-btn:hover {
+            background: rgba(248, 113, 113, 0.25);
+        }
+        [data-theme="pink"] .add-subtask-btn {
+            background: rgba(249, 168, 212, 0.15);
+            color: #f9a8d4;
+            border-color: #f9a8d4;
+        }
+        [data-theme="pink"] .add-subtask-btn:hover {
+            background: rgba(249, 168, 212, 0.25);
+        }
+        [data-theme="teal"] .add-subtask-btn {
+            background: rgba(45, 212, 191, 0.15);
+            color: #2dd4bf;
+            border-color: #2dd4bf;
+        }
+        [data-theme="teal"] .add-subtask-btn:hover {
+            background: rgba(45, 212, 191, 0.25);
+        }
+        [data-theme="golden"] .add-subtask-btn {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+            border-color: #fbbf24;
+        }
+        [data-theme="golden"] .add-subtask-btn:hover {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.25) 0%, rgba(249, 115, 22, 0.25) 50%, rgba(234, 88, 12, 0.25) 100%);
+        }
+        [data-theme="cyan"] .add-subtask-btn {
+            background: rgba(34, 211, 238, 0.15);
+            color: #22d3ee;
+            border-color: #22d3ee;
+        }
+        [data-theme="cyan"] .add-subtask-btn:hover {
+            background: rgba(34, 211, 238, 0.25);
+        }
+        [data-theme="synthwave"] .add-subtask-btn {
+            background: rgba(167, 139, 250, 0.15);
+            color: #a78bfa;
+            border-color: #a78bfa;
+        }
+        [data-theme="synthwave"] .add-subtask-btn:hover {
+            background: linear-gradient(90deg, rgba(167, 139, 250, 0.25) 0%, rgba(236, 72, 153, 0.25) 100%);
+        }
+        [data-theme="prism"] .add-subtask-btn {
+            background: rgba(45, 212, 191, 0.15);
+            color: #2dd4bf;
+            border-color: #2dd4bf;
+        }
+        [data-theme="prism"] .add-subtask-btn:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.25) 0%, rgba(59, 130, 246, 0.25) 50%, rgba(139, 92, 246, 0.25) 100%);
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <div class="editor-header">
+            <h1>📝 Task Editor</h1>
+            <p>Edit task details and save changes back to your task list</p>
+            <div class="task-id" onclick="copyEditorTaskId(${task.id}, event)" title="Click to copy ID" style="display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 4px; cursor: pointer; user-select: none; margin-top: 8px; font-size: 12px; color: #8b949e; font-family: 'Courier New', monospace; transition: all 0.2s;">
+                ID: ${task.id}
+            </div>
+            <div class="editor-last-updated">
+                <strong>Last Updated:</strong> ${task.updatedAt ? new Date(task.updatedAt).toLocaleString('en-US', { 
+                    weekday: 'short',
+                    year: 'numeric', 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    hour12: true 
+                }) : 'N/A'}
+                ${task.createdAt ? ` | <strong>Created:</strong> ${new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+            </div>
+        </div>
+        <div class="editor-content">
+            <div class="editor-field">
+                <label>Task Title *</label>
+                <input 
+                    type="text" 
+                    id="editor-title" 
+                    value="${this.escapeHtml(task.title)}"
+                    placeholder="Enter task title"
+                >
+            </div>
+
+            <div class="editor-field">
+                <label>Description</label>
+                <textarea 
+                    id="editor-description"
+                    placeholder="Enter task description"
+                >${this.escapeHtml(task.content)}</textarea>
+            </div>
+
+            <div class="editor-field-group">
+                <div class="editor-field">
+                    <label>Priority</label>
+                    <select id="editor-priority">
+                        <option value="low" ${task.priority === 'low' ? 'selected' : ''}>Low</option>
+                        <option value="medium" ${task.priority === 'medium' ? 'selected' : ''}>Medium</option>
+                        <option value="high" ${task.priority === 'high' ? 'selected' : ''}>High</option>
+                    </select>
+                </div>
+
+                <div class="editor-field">
+                    <label>Category</label>
+                    <input 
+                        type="text" 
+                        id="editor-category" 
+                        value="${this.escapeHtml(task.category)}"
+                        placeholder="Enter category"
+                    >
+                </div>
+            </div>
+
+            <div class="editor-field">
+                <div class="editor-subtasks">
+                    <h3>📋 Subtasks (${task.subtasks.length})</h3>
+                    <div id="subtasks-container">
+                        ${subtasksHTML}
+                    </div>
+                    <button class="add-subtask-btn" onclick="addNewSubtask()">➕ Add New Subtask</button>
+                </div>
+            </div>
+        </div>
+        <div class="editor-actions">
+            <button class="editor-btn editor-btn-primary" onclick="saveTaskChanges()">💾 Save Changes</button>
+            <button class="editor-btn editor-btn-secondary" onclick="window.close()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        let taskData = ${JSON.stringify(task)};
+        let nextSubtaskId = Math.max(...taskData.subtasks.map(s => s.id), Date.now()) + 1;
+
+        function toggleSubtaskInEditor(subtaskId) {
+            const subtask = taskData.subtasks.find(s => s.id === subtaskId);
+            if (subtask) {
+                subtask.completed = !subtask.completed;
+                if (subtask.completed) {
+                    subtask.completedAt = new Date().toISOString();
+                } else {
+                    subtask.completedAt = null;
+                }
+            }
+        }
+
+        function removeSubtaskInEditor(subtaskId) {
+            if (confirm('Delete this subtask?')) {
+                taskData.subtasks = taskData.subtasks.filter(s => s.id !== subtaskId);
+                document.querySelector(\`[data-subtask-id="\${subtaskId}"]\`).remove();
+            }
+        }
+
+        function addNewSubtask() {
+            const container = document.getElementById('subtasks-container');
+            const newId = nextSubtaskId++;
+            
+            const newSubtask = {
+                id: newId,
+                text: '',
+                completed: false
+            };
+            taskData.subtasks.push(newSubtask);
+
+            const subtaskDiv = document.createElement('div');
+            subtaskDiv.className = 'editor-subtask-item';
+            subtaskDiv.setAttribute('data-subtask-id', newId);
+            subtaskDiv.setAttribute('draggable', 'true');
+            subtaskDiv.setAttribute('ondragstart', 'handleEditorSubtaskDragStart(event)');
+            subtaskDiv.setAttribute('ondragend', 'handleEditorSubtaskDragEnd(event)');
+            subtaskDiv.setAttribute('ondragover', 'handleEditorSubtaskDragOver(event)');
+            subtaskDiv.setAttribute('ondragleave', 'handleEditorSubtaskDragLeave(event)');
+            subtaskDiv.setAttribute('ondrop', 'handleEditorSubtaskDrop(event)');
+            subtaskDiv.innerHTML = '<div style="display: flex; gap: 12px; align-items: start;">' +
+                '<span class="editor-drag-handle">⋮⋮</span>' +
+                '<input type="checkbox" class="editor-task-checkbox" onchange="toggleSubtaskInEditor(' + newId + ')" ' +
+                'style="width: 20px; height: 20px; cursor: pointer; margin-top: 4px;">' +
+                '<textarea class="subtask-editor-text" data-subtask-id="' + newId + '" ' +
+                'placeholder="Enter subtask description..." ' +
+                'style="flex: 1; padding: 10px; border: 2px solid #30363d; border-radius: 6px; font-size: 14px; background: #0d1117; color: #e0e0e0; resize: vertical; min-height: 60px; font-family: inherit;">' +
+                '</textarea>' +
+                '<button onclick="removeSubtaskInEditor(' + newId + ')" ' +
+                'style="padding: 8px 12px; background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid #ef4444; border-radius: 4px; font-size: 12px; cursor: pointer;">' +
+                'Delete</button>' +
+                '</div>';
+            
+            container.appendChild(subtaskDiv);
+            subtaskDiv.querySelector('textarea').focus();
+        }
+
+        async function copyEditorTaskId(id, event) {
+            try {
+                await navigator.clipboard.writeText(id.toString());
+                
+                // Visual feedback - flash green
+                const taskIdElement = event.currentTarget;
+                taskIdElement.classList.add('copied');
+                
+                setTimeout(() => {
+                    taskIdElement.classList.remove('copied');
+                }, 1500);
+                
+                console.log('📋 Copied task ID: ' + id);
+            } catch (e) {
+                console.error('Failed to copy task ID:', e);
+                // Fallback: select the text
+                const range = document.createRange();
+                range.selectNodeContents(event.currentTarget);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+
+        function saveTaskChanges() {
+            // Get updated values
+            const title = document.getElementById('editor-title').value.trim();
+            const description = document.getElementById('editor-description').value.trim();
+            const priority = document.getElementById('editor-priority').value;
+            const category = document.getElementById('editor-category').value.trim();
+
+            if (!title) {
+                alert('Task title is required');
+                return;
+            }
+
+            // Update subtask texts
+            document.querySelectorAll('.subtask-editor-text').forEach(textarea => {
+                const subtaskId = parseInt(textarea.getAttribute('data-subtask-id'));
+                const subtask = taskData.subtasks.find(s => s.id === subtaskId);
+                if (subtask) {
+                    subtask.text = textarea.value.trim();
+                }
+            });
+
+            // Filter out empty subtasks
+            taskData.subtasks = taskData.subtasks.filter(s => s.text);
+            
+            console.log('Saving task with subtasks:', taskData.subtasks);
+
+            // Create updated task object
+            const updatedTask = {
+                title: title,
+                content: description,
+                priority: priority,
+                category: category,
+                subtasks: taskData.subtasks
+            };
+            
+            console.log('Updated task object:', updatedTask);
+
+            // Send message to parent window
+            if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                    type: 'taskUpdate',
+                    taskId: taskData.id,
+                    task: updatedTask
+                }, '*');
+                
+                alert('✅ Task updated successfully!');
+                window.close();
+            } else {
+                alert('⚠️ Parent window was closed. Changes cannot be saved.');
+            }
+        }
+
+        // Auto-save on window close
+        window.addEventListener('beforeunload', (e) => {
+            // Optional: warn user if they have unsaved changes
+            const title = document.getElementById('editor-title').value.trim();
+            if (title !== taskData.title) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // Drag and drop handlers for editor subtasks
+        let draggedEditorSubtask = null;
+
+        function handleEditorSubtaskDragStart(e) {
+            const subtaskItem = e.target.closest('.editor-subtask-item');
+            if (!subtaskItem) return;
+            
+            subtaskItem.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            draggedEditorSubtask = parseInt(subtaskItem.dataset.subtaskId);
+        }
+
+        function handleEditorSubtaskDragEnd(e) {
+            const subtaskItem = e.target.closest('.editor-subtask-item');
+            if (subtaskItem) {
+                subtaskItem.classList.remove('dragging');
+            }
+            // Remove any remaining drag-over classes
+            document.querySelectorAll('.editor-subtask-item.drag-over').forEach(item => {
+                item.classList.remove('drag-over');
+            });
+        }
+
+        function handleEditorSubtaskDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            
+            const subtaskItem = e.target.closest('.editor-subtask-item');
+            if (subtaskItem && !subtaskItem.classList.contains('dragging')) {
+                subtaskItem.classList.add('drag-over');
+            }
+        }
+
+        function handleEditorSubtaskDragLeave(e) {
+            const subtaskItem = e.target.closest('.editor-subtask-item');
+            if (subtaskItem) {
+                subtaskItem.classList.remove('drag-over');
+            }
+        }
+
+        function handleEditorSubtaskDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const targetItem = e.target.closest('.editor-subtask-item');
+            if (!targetItem || draggedEditorSubtask === null) return;
+            
+            targetItem.classList.remove('drag-over');
+            
+            const targetSubtaskId = parseInt(targetItem.dataset.subtaskId);
+            
+            if (draggedEditorSubtask === targetSubtaskId) return;
+            
+            // Find the indices
+            const draggedIndex = taskData.subtasks.findIndex(s => s.id === draggedEditorSubtask);
+            const targetIndex = taskData.subtasks.findIndex(s => s.id === targetSubtaskId);
+            
+            if (draggedIndex === -1 || targetIndex === -1) return;
+            
+            // Reorder the subtasks array
+            const [draggedSubtask] = taskData.subtasks.splice(draggedIndex, 1);
+            taskData.subtasks.splice(targetIndex, 0, draggedSubtask);
+            
+            // Re-render the subtasks
+            const container = document.getElementById('subtasks-container');
+            const subtaskItems = Array.from(container.children);
+            
+            // Move the DOM element
+            const draggedElement = subtaskItems[draggedIndex];
+            container.removeChild(draggedElement);
+            
+            if (targetIndex === 0) {
+                container.insertBefore(draggedElement, container.firstChild);
+            } else if (targetIndex >= subtaskItems.length - 1) {
+                container.appendChild(draggedElement);
+            } else {
+                const referenceNode = draggedIndex < targetIndex ? 
+                    subtaskItems[targetIndex + 1] : subtaskItems[targetIndex];
+                container.insertBefore(draggedElement, referenceNode);
+            }
+            
+            draggedEditorSubtask = null;
+        }
+    <\/script>
+</body>
+</html>
+                `;
+            }
+
+            // Theme Management
+            loadTheme() {
+                if (this.currentTheme !== 'orange') {
+                    document.documentElement.setAttribute('data-theme', this.currentTheme);
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+                this.updateThemeDropdown();
+            }
+
+            setTheme(theme) {
+                this.currentTheme = theme;
+                localStorage.setItem('theme', theme);
+                this.loadTheme();
+                
+                // Close dropdown after selection
+                const dropdown = document.getElementById('theme-dropdown');
+                if (dropdown) {
+                    dropdown.classList.remove('active');
+                }
+            }
+
+            toggleThemeDropdown() {
+                const dropdown = document.getElementById('theme-dropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('active');
+                }
+            }
+
+            updateThemeDropdown() {
+                // Update active theme option
+                const options = document.querySelectorAll('.theme-option');
+                options.forEach(option => {
+                    const themeValue = option.getAttribute('data-theme');
+                    if (themeValue === this.currentTheme) {
+                        option.classList.add('active');
+                    } else {
+                        option.classList.remove('active');
+                    }
+                });
+            }
+        }
+
+        // Initialize the task manager
+        const taskManager = new TaskManager();
+        
+        // Make taskManager accessible globally for theme selector
+        window.app = taskManager;
+
+        // Close theme dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('theme-dropdown');
+            const themeSelector = document.querySelector('.theme-selector');
+            
+            if (dropdown && themeSelector && !themeSelector.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        // Help function
+        function showHelp() {
+            const helpText = `
+TASK LIST MANAGER - QUICK START GUIDE
+
+ADDING TASKS:
+• Enter a title and optional description
+• Select priority (Low, Medium, High)
+• Add a category to organize your tasks
+• Click "Add Task" or press Enter
+
+MANAGING TASKS:
+• ✓ Check the box to mark complete (date tracked automatically)
+• ✏️ Edit to modify title or description
+• 📦 Archive to hide from main view (still searchable)
+• 🗑️ Delete to permanently remove
+
+SUBTASKS (NEXT STEPS):
+• Click "Add Subtask" to break down larger tasks
+• Check off steps as you complete them
+• Edit or delete individual subtasks
+• Track progress with the progress bar
+
+FILTERING:
+• Use the Filter dropdown to view:
+  - All Tasks, Active, or Completed
+  - Filter by Priority (High, Medium, Low)
+  - View Archived tasks
+
+EXPORTING & BACKUP:
+• 📧 Export for Email - Copy formatted list for sharing
+• 💾 Backup Tasks - Download timestamped JSON file
+• 📥 Import Tasks - Restore from backup (merge or replace)
+• 🔄 Auto-Backup - Hourly automatic saves (Chrome/Edge only)
+
+DATA STORAGE:
+• All data saved in your browser's localStorage
+• 100% private - nothing sent to servers
+• Persists between sessions
+• Use backup/import to move between computers
+
+TIPS:
+• Archive completed tasks weekly to keep lists clean
+• Create manual backups before browser maintenance
+• Use priorities to focus on what matters
+• Break big tasks into subtasks for better tracking
+
+Need more details? Check the full documentation or contact your team lead.
+            `.trim();
+
+            alert(helpText);
+        }
