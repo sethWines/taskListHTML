@@ -1971,6 +1971,16 @@
             font-weight: 700;
             color: var(--primary-orange, #ffa834);
         }
+        
+        /* Storage stat specific styling - clickable with hover effect */
+        #stat-storage {
+            transition: all 0.2s ease;
+        }
+        
+        #stat-storage:hover {
+            transform: scale(1.1);
+            text-shadow: 0 0 8px currentColor;
+        }
 
         .empty-state {
             text-align: center;
@@ -2292,6 +2302,10 @@
                     <span class="stat-label">Completed</span>
                     <span class="stat-value" id="stat-completed">0</span>
                 </div>
+                <div class="stat-item">
+                    <span class="stat-label">Storage</span>
+                    <span class="stat-value" id="stat-storage" title="Click to see detailed storage info">0%</span>
+                </div>
             </div>
 
             <!-- Add Task Controls -->
@@ -2474,6 +2488,24 @@
                 </div>
                 <div class="modal-actions">
                     <button class="task-btn task-btn-secondary" id="close-stats-btn">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Storage Details Modal -->
+    <div id="storage-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📊 Storage Usage Details</h2>
+                <button class="modal-close" id="close-storage-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Your browser's localStorage usage for this app:</p>
+                <div class="export-preview" id="storage-details" style="font-family: monospace; white-space: pre-wrap; user-select: text;"></div>
+                <div class="modal-actions">
+                    <button class="task-btn task-btn-primary" id="copy-storage-btn">📋 Copy to Clipboard</button>
+                    <button class="task-btn task-btn-secondary" id="close-storage-btn">Close</button>
                 </div>
             </div>
         </div>
@@ -3248,6 +3280,31 @@
                         this.closeStatsModal();
                     }
                 });
+                
+                // Storage stat click handler
+                const storageStatEl = document.getElementById('stat-storage');
+                if (storageStatEl) {
+                    storageStatEl.addEventListener('click', (e) => {
+                        console.log('🖱️ Storage stat clicked!');
+                        const storageInfo = this.getStorageUsage();
+                        this.showStorageModal(storageInfo);
+                    });
+                    console.log('✅ Storage stat click handler attached');
+                } else {
+                    console.error('❌ Storage stat element not found during setup');
+                }
+                
+                // Storage modal handlers
+                document.getElementById('close-storage-modal').addEventListener('click', () => this.closeStorageModal());
+                document.getElementById('close-storage-btn').addEventListener('click', () => this.closeStorageModal());
+                document.getElementById('copy-storage-btn').addEventListener('click', () => this.copyStorageToClipboard());
+                
+                // Close storage modal on outside click
+                document.getElementById('storage-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'storage-modal') {
+                        this.closeStorageModal();
+                    }
+                });
             }
 
             loadTasks() {
@@ -3786,6 +3843,150 @@
                 document.getElementById('stat-total').textContent = total;
                 document.getElementById('stat-active').textContent = active;
                 document.getElementById('stat-completed').textContent = completed;
+                
+                // Update storage stats
+                this.updateStorageStats();
+            }
+            
+            // Calculate and display storage usage
+            updateStorageStats() {
+                try {
+                    const storageInfo = this.getStorageUsage();
+                    const storageEl = document.getElementById('stat-storage');
+                    
+                    if (storageEl) {
+                        // Display percentage with color coding
+                        const percent = storageInfo.percentUsed;
+                        // Show more precision for very small percentages
+                        const displayPercent = percent < 1 ? percent.toFixed(2) : percent.toFixed(1);
+                        storageEl.textContent = `${displayPercent}%`;
+                        
+                        // Color code based on usage
+                        if (percent >= 90) {
+                            storageEl.style.color = '#ff4444'; // Red - critical
+                        } else if (percent >= 75) {
+                            storageEl.style.color = '#ffaa00'; // Orange - warning
+                        } else if (percent >= 50) {
+                            storageEl.style.color = '#ffa834'; // Light orange
+                        } else {
+                            storageEl.style.color = '#4ade80'; // Green - healthy
+                        }
+                        
+                        // Update tooltip with detailed info
+                        storageEl.title = `Storage Usage:\n${storageInfo.usedKB} KB / ${storageInfo.quotaKB} KB\n(${storageInfo.usedMB} MB / ${storageInfo.quotaMB} MB)\n\nCompression: ${storageInfo.compressionRatio}%\nClick for details`;
+                        
+                        // Make it look clickable
+                        storageEl.style.cursor = 'pointer';
+                        
+                        console.log('📊 Storage stats updated:', storageInfo);
+                    } else {
+                        console.error('Storage stat element not found');
+                    }
+                } catch (e) {
+                    console.error('Failed to update storage stats:', e);
+                }
+            }
+            
+            // Get current storage usage
+            getStorageUsage() {
+                // Estimate localStorage quota (5MB for most browsers, 10MB for some)
+                const QUOTA_BYTES = 5 * 1024 * 1024; // 5 MB in bytes (conservative estimate)
+                
+                let totalUsed = 0;
+                let tasksSize = 0;
+                
+                // Calculate total localStorage usage for this origin
+                for (let key in localStorage) {
+                    if (localStorage.hasOwnProperty(key)) {
+                        const value = localStorage.getItem(key);
+                        const size = (key.length + (value ? value.length : 0)) * 2; // UTF-16 = 2 bytes per char
+                        totalUsed += size;
+                        
+                        if (key === 'tasks') {
+                            tasksSize = size;
+                        }
+                    }
+                }
+                
+                // Get uncompressed size for comparison
+                const uncompressedSize = JSON.stringify(this.tasks).length * 2;
+                const compressionRatio = tasksSize > 0 ? ((tasksSize / uncompressedSize) * 100).toFixed(1) : 0;
+                
+                const percentUsed = ((totalUsed / QUOTA_BYTES) * 100).toFixed(1);
+                
+                return {
+                    totalBytes: totalUsed,
+                    totalKB: (totalUsed / 1024).toFixed(2),
+                    totalMB: (totalUsed / (1024 * 1024)).toFixed(2),
+                    tasksBytes: tasksSize,
+                    tasksKB: (tasksSize / 1024).toFixed(2),
+                    tasksMB: (tasksSize / (1024 * 1024)).toFixed(2),
+                    quotaBytes: QUOTA_BYTES,
+                    quotaKB: (QUOTA_BYTES / 1024).toFixed(0),
+                    quotaMB: (QUOTA_BYTES / (1024 * 1024)).toFixed(0),
+                    usedKB: (totalUsed / 1024).toFixed(2),
+                    usedMB: (totalUsed / (1024 * 1024)).toFixed(2),
+                    availableKB: ((QUOTA_BYTES - totalUsed) / 1024).toFixed(2),
+                    availableMB: ((QUOTA_BYTES - totalUsed) / (1024 * 1024)).toFixed(2),
+                    percentUsed: parseFloat(percentUsed),
+                    compressionRatio: compressionRatio,
+                    taskCount: this.tasks.length
+                };
+            }
+            
+            // Show detailed storage information in modal
+            showStorageModal(info) {
+                const avgPerTask = info.taskCount > 0 
+                    ? (info.tasksBytes / info.taskCount / 1024).toFixed(2) 
+                    : '0.00';
+                
+                const message = `📊 Storage Usage Details
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total Usage: ${info.usedMB} MB (${info.percentUsed}%)
+Available: ${info.availableMB} MB
+Quota: ${info.quotaMB} MB
+
+Task Data: ${info.tasksMB} MB (${info.tasksKB} KB)
+Tasks Stored: ${info.taskCount}
+Compression Ratio: ${info.compressionRatio}%
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Avg per Task: ${avgPerTask} KB
+
+${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' : info.percentUsed >= 50 ? '💡 You have plenty of space remaining.' : '✅ Storage usage is healthy!'}`;
+                
+                document.getElementById('storage-details').textContent = message;
+                // Use 'flex' instead of 'block' to maintain centering
+                document.getElementById('storage-modal').style.display = 'flex';
+            }
+            
+            closeStorageModal() {
+                document.getElementById('storage-modal').style.display = 'none';
+            }
+            
+            async copyStorageToClipboard() {
+                const text = document.getElementById('storage-details').textContent;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    const btn = document.getElementById('copy-storage-btn');
+                    const originalText = btn.textContent;
+                    btn.textContent = '✅ Copied!';
+                    btn.style.background = '#3fb950';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.style.background = '';
+                    }, 2000);
+                } catch (err) {
+                    console.error('Failed to copy:', err);
+                    alert('Failed to copy to clipboard. Please select and copy manually.');
+                }
+            }
+            
+            // Legacy function - keeping for backward compatibility
+            showStorageDetails(info) {
+                // Redirect to modal
+                this.showStorageModal(info);
             }
 
             renderTask(task) {
