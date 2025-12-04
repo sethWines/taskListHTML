@@ -7003,9 +7003,91 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             color: var(--primary-orange);
             margin-bottom: 8px;
         }
+        .editor-header {
+            background: var(--gradient-header);
+            padding: 24px;
+            border-bottom: 2px solid #30363d;
+        }
+        .editor-header h1 {
+            font-size: 24px;
+            color: var(--primary-orange);
+            margin-bottom: 8px;
+        }
         .editor-header p {
             font-size: 14px;
             color: #8b949e;
+        }
+        .editor-header .task-id {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            user-select: none;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #8b949e;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+        }
+        .editor-header .task-id:hover {
+            background: rgba(255, 168, 52, 0.1);
+            color: var(--primary-orange);
+            box-shadow: 0 0 8px rgba(255, 168, 52, 0.3);
+        }
+        .editor-header .task-id.copied {
+            color: #3fb950;
+            box-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
+        }
+        [data-theme="blue"] .editor-header .task-id:hover {
+            background: rgba(96, 165, 250, 0.1);
+            color: #60a5fa;
+            box-shadow: 0 0 8px rgba(96, 165, 250, 0.3);
+        }
+        [data-theme="purple"] .editor-header .task-id:hover {
+            background: rgba(167, 139, 250, 0.1);
+            color: #a78bfa;
+            box-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+        }
+        [data-theme="green"] .editor-header .task-id:hover {
+            background: rgba(74, 222, 128, 0.1);
+            color: #4ade80;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.3);
+        }
+        [data-theme="red"] .editor-header .task-id:hover {
+            background: rgba(248, 113, 113, 0.1);
+            color: #f87171;
+            box-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+        }
+        [data-theme="pink"] .editor-header .task-id:hover {
+            background: rgba(249, 168, 212, 0.1);
+            color: #f9a8d4;
+            box-shadow: 0 0 8px rgba(249, 168, 212, 0.3);
+        }
+        [data-theme="teal"] .editor-header .task-id:hover {
+            background: rgba(45, 212, 191, 0.1);
+            color: #2dd4bf;
+            box-shadow: 0 0 8px rgba(45, 212, 191, 0.3);
+        }
+        [data-theme="golden"] .editor-header .task-id:hover {
+            background: rgba(251, 191, 36, 0.1);
+            color: #fbbf24;
+            box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+        }
+        [data-theme="cyan"] .editor-header .task-id:hover {
+            background: rgba(34, 211, 238, 0.1);
+            color: #22d3ee;
+            box-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
+        }
+        [data-theme="synthwave"] .editor-header .task-id:hover {
+            background: rgba(167, 139, 250, 0.1);
+            color: #a78bfa;
+            box-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+        }
+        [data-theme="prism"] .editor-header .task-id:hover {
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.1) 0%, rgba(59, 130, 246, 0.1) 50%, rgba(139, 92, 246, 0.1) 100%);
+            color: #60a5fa;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
         }
         .editor-last-updated {
             font-size: 12px;
@@ -7247,6 +7329,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
         <div class="editor-header">
             <h1>📝 Task Editor</h1>
             <p>Edit task details and save changes back to your task list</p>
+            <div class="task-id" onclick="copyEditorTaskId(${task.id}, event)" title="Click to copy ID" style="display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 4px; cursor: pointer; user-select: none; margin-top: 8px; font-size: 12px; color: #8b949e; font-family: 'Courier New', monospace; transition: all 0.2s;">
+                ID: ${task.id}
+            </div>
             <div class="editor-last-updated">
                 <strong>Last Updated:</strong> ${task.updatedAt ? new Date(task.updatedAt).toLocaleString('en-US', { 
                     weekday: 'short',
@@ -7374,6 +7459,30 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             
             container.appendChild(subtaskDiv);
             subtaskDiv.querySelector('textarea').focus();
+        }
+
+        async function copyEditorTaskId(id, event) {
+            try {
+                await navigator.clipboard.writeText(id.toString());
+                
+                // Visual feedback - flash green
+                const taskIdElement = event.currentTarget;
+                taskIdElement.classList.add('copied');
+                
+                setTimeout(() => {
+                    taskIdElement.classList.remove('copied');
+                }, 1500);
+                
+                console.log('📋 Copied task ID: ' + id);
+            } catch (e) {
+                console.error('Failed to copy task ID:', e);
+                // Fallback: select the text
+                const range = document.createRange();
+                range.selectNodeContents(event.currentTarget);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
         }
 
         function saveTaskChanges() {
