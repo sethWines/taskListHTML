@@ -3857,8 +3857,12 @@
                     if (storageEl) {
                         // Display percentage with color coding
                         const percent = storageInfo.percentUsed;
+                        console.log('🔍 Raw percent value:', percent, 'Type:', typeof percent);
+                        
                         // Show more precision for very small percentages
                         const displayPercent = percent < 1 ? percent.toFixed(2) : percent.toFixed(1);
+                        console.log('🔍 Display percent:', displayPercent);
+                        
                         storageEl.textContent = `${displayPercent}%`;
                         
                         // Color code based on usage
@@ -3894,6 +3898,7 @@
                 
                 let totalUsed = 0;
                 let tasksSize = 0;
+                const breakdown = {}; // Track size per key
                 
                 // Calculate total localStorage usage for this origin
                 for (let key in localStorage) {
@@ -3901,6 +3906,7 @@
                         const value = localStorage.getItem(key);
                         const size = (key.length + (value ? value.length : 0)) * 2; // UTF-16 = 2 bytes per char
                         totalUsed += size;
+                        breakdown[key] = size;
                         
                         if (key === 'tasks') {
                             tasksSize = size;
@@ -3912,7 +3918,7 @@
                 const uncompressedSize = JSON.stringify(this.tasks).length * 2;
                 const compressionRatio = tasksSize > 0 ? ((tasksSize / uncompressedSize) * 100).toFixed(1) : 0;
                 
-                const percentUsed = ((totalUsed / QUOTA_BYTES) * 100).toFixed(1);
+                const percentUsed = parseFloat(((totalUsed / QUOTA_BYTES) * 100).toFixed(1));
                 
                 return {
                     totalBytes: totalUsed,
@@ -3928,9 +3934,10 @@
                     usedMB: (totalUsed / (1024 * 1024)).toFixed(2),
                     availableKB: ((QUOTA_BYTES - totalUsed) / 1024).toFixed(2),
                     availableMB: ((QUOTA_BYTES - totalUsed) / (1024 * 1024)).toFixed(2),
-                    percentUsed: parseFloat(percentUsed),
+                    percentUsed: percentUsed,
                     compressionRatio: compressionRatio,
-                    taskCount: this.tasks.length
+                    taskCount: this.tasks.length,
+                    breakdown: breakdown // Include breakdown of all keys
                 };
             }
             
@@ -3939,6 +3946,22 @@
                 const avgPerTask = info.taskCount > 0 
                     ? (info.tasksBytes / info.taskCount / 1024).toFixed(2) 
                     : '0.00';
+                
+                // Generate breakdown of storage by key
+                let breakdownText = '\n🔍 Storage Breakdown:\n';
+                const sortedKeys = Object.entries(info.breakdown)
+                    .sort((a, b) => b[1] - a[1]) // Sort by size, largest first
+                    .slice(0, 10); // Show top 10
+                
+                for (const [key, bytes] of sortedKeys) {
+                    const kb = (bytes / 1024).toFixed(2);
+                    const percent = ((bytes / info.totalBytes) * 100).toFixed(1);
+                    breakdownText += `  • ${key}: ${kb} KB (${percent}%)\n`;
+                }
+                
+                if (Object.keys(info.breakdown).length > 10) {
+                    breakdownText += `  • ... and ${Object.keys(info.breakdown).length - 10} more keys\n`;
+                }
                 
                 const message = `📊 Storage Usage Details
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3953,6 +3976,8 @@ Compression Ratio: ${info.compressionRatio}%
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Avg per Task: ${avgPerTask} KB
+${breakdownText}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' : info.percentUsed >= 50 ? '💡 You have plenty of space remaining.' : '✅ Storage usage is healthy!'}`;
                 
