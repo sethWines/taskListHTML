@@ -2279,10 +2279,12 @@
         <main>
             <!-- Sticky Action Buttons -->
             <div class="action-buttons-sticky">
+                <span id="file-storage-indicator" style="display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; transition: all 0.2s; cursor: help;" title="Storage method">🌐 Browser</span>
                 <button class="task-btn task-btn-primary" id="export-btn">Export for Email</button>
                 <button class="task-btn task-btn-primary" id="backup-btn">Backup Tasks</button>
                 <button class="task-btn task-btn-primary" id="import-btn">Import Tasks</button>
                 <button class="task-btn task-btn-primary" id="auto-backup-btn" title="Enable automatic hourly backups to a single file (overwrites each time)">Auto-Backup</button>
+                <button class="task-btn task-btn-secondary" id="storage-settings-btn" title="Change storage location">⚙️ Storage Settings</button>
                 <button class="task-btn task-btn-primary" id="enable-notifications-btn" title="Enable browser notifications for due tasks">🔔 Enable Reminders</button>
                 <button class="task-btn task-btn-secondary" id="view-stats-btn" title="View productivity statistics and insights">📊 Statistics</button>
                 <input type="file" id="import-file-input" accept=".json" style="display: none;">
@@ -2510,6 +2512,112 @@
             </div>
         </div>
     </div>
+    
+    <!-- File Storage Setup Wizard Modal -->
+    <div id="file-storage-setup-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2>🚀 Welcome to Task List Manager!</h2>
+                <button class="modal-close" id="close-setup-wizard">×</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 20px; color: var(--text-secondary); line-height: 1.6;">
+                    Choose how you want to store your tasks:
+                </p>
+                
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <!-- File Storage Option -->
+                    <div class="storage-option" style="border: 2px solid var(--border-color); border-radius: 8px; padding: 20px; cursor: pointer; transition: all 0.2s;" onclick="taskManager.selectStorageOption('file')">
+                        <div style="display: flex; align-items: start; gap: 12px;">
+                            <div style="font-size: 32px;">📁</div>
+                            <div>
+                                <h3 style="margin: 0 0 8px 0; color: var(--primary-orange);">File-Based Storage (Recommended)</h3>
+                                <ul style="margin: 8px 0; padding-left: 20px; color: var(--text-secondary); line-height: 1.6;">
+                                    <li>✅ Unlimited storage (your hard drive)</li>
+                                    <li>✅ Fast & efficient</li>
+                                    <li>✅ Easy backup (just copy the file)</li>
+                                    <li>✅ No browser storage bloat</li>
+                                    <li>✅ Portable between machines</li>
+                                </ul>
+                                <p style="margin: 12px 0 0 0; font-size: 13px; color: var(--text-muted);">
+                                    <strong>Best for:</strong> Heavy users, large task lists, long-term storage
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Browser Storage Option -->
+                    <div class="storage-option" style="border: 2px solid var(--border-color); border-radius: 8px; padding: 20px; cursor: pointer; transition: all 0.2s;" onclick="taskManager.selectStorageOption('browser')">
+                        <div style="display: flex; align-items: start; gap: 12px;">
+                            <div style="font-size: 32px;">🌐</div>
+                            <div>
+                                <h3 style="margin: 0 0 8px 0;">Browser Storage (localStorage)</h3>
+                                <ul style="margin: 8px 0; padding-left: 20px; color: var(--text-secondary); line-height: 1.6;">
+                                    <li>✅ Simple setup (no file selection)</li>
+                                    <li>✅ Works in any browser</li>
+                                    <li>⚠️ Limited to ~5MB storage</li>
+                                    <li>⚠️ Shared with other apps/sites</li>
+                                    <li>⚠️ Lost if browser data cleared</li>
+                                </ul>
+                                <p style="margin: 12px 0 0 0; font-size: 13px; color: var(--text-muted);">
+                                    <strong>Best for:</strong> Light users, temporary lists, trying the app
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 24px; padding: 16px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <p style="margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+                        💡 <strong>Tip:</strong> You can change this later in settings. File storage requires Chrome, Edge, or other Chromium-based browsers.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Storage Settings Modal -->
+    <div id="storage-settings-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2>⚙️ Storage Settings</h2>
+                <button class="modal-close" id="close-storage-settings">×</button>
+            </div>
+            <div class="modal-body">
+                <div style="padding: 20px; background: var(--bg-tertiary); border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 20px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px;">Current Storage Method</h3>
+                    <div id="current-storage-display" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 6px;">
+                        <span style="font-size: 24px;">📁</span>
+                        <div>
+                            <div style="font-weight: 600;">File Storage</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Tasks saved to local file</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <button class="task-btn task-btn-primary" id="switch-to-file-btn" style="width: 100%;">
+                        📁 Switch to File Storage
+                    </button>
+                    <button class="task-btn task-btn-secondary" id="switch-to-browser-btn" style="width: 100%;">
+                        🌐 Switch to Browser Storage
+                    </button>
+                    <button class="task-btn task-btn-secondary" id="change-file-location-btn" style="width: 100%;">
+                        📂 Change File Location
+                    </button>
+                    <button class="task-btn task-btn-secondary" id="clear-file-storage-btn" style="width: 100%; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3);">
+                        🗑️ Reset File Storage
+                    </button>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 16px; background: rgba(251, 191, 36, 0.1); border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3);">
+                    <p style="margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+                        ⚠️ <strong>Note:</strong> Switching storage methods will migrate all your tasks. The process is safe and reversible.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Task Manager Class
@@ -2547,6 +2655,13 @@
                 this.dbName = 'TaskManagerDB';
                 this.dbVersion = 1;
                 this.currentTheme = localStorage.getItem('theme') || 'orange';
+                
+                // File-based storage properties
+                this.useFileStorage = localStorage.getItem('useFileStorage') === 'true';
+                this.taskFileHandle = null;
+                this.taskDirectoryHandle = null;
+                this.fileStorageReady = false;
+                
                 this.loadTheme();
                 this.init();
             }
@@ -2554,6 +2669,40 @@
             async init() {
                 this.setupEventListeners();
                 this.setupStorageSync(); // Add cross-tab synchronization
+                
+                // Try to restore file storage handle if enabled
+                if (this.useFileStorage) {
+                    const restored = await this.restoreFileStorageHandle();
+                    if (restored) {
+                        // Load tasks from file
+                        const fileTasks = await this.loadFromFile();
+                        if (fileTasks.length > 0) {
+                            this.tasks = fileTasks;
+                            // Initialize collapsed state
+                            this.tasks.forEach(task => {
+                                if (!(task.id in this.collapsedTasks)) {
+                                    this.collapsedTasks[task.id] = true;
+                                }
+                            });
+                        }
+                    } else {
+                        // File storage failed, disable it
+                        this.useFileStorage = false;
+                        localStorage.setItem('useFileStorage', 'false');
+                    }
+                }
+                
+                // Update indicators
+                this.updateFileStorageIndicator();
+                this.updateFooter();
+                
+                // Check if first run and file storage not set up
+                const hasSeenSetup = localStorage.getItem('hasSeenFileStorageSetup');
+                if (!hasSeenSetup && !this.useFileStorage) {
+                    // Show setup wizard on first run
+                    setTimeout(() => this.showFileStorageSetupWizard(), 1000);
+                }
+                
                 this.render();
                 // Restore directory handle from IndexedDB if auto-backup is enabled
                 if (this.autoBackupEnabled) {
@@ -2561,8 +2710,6 @@
                     this.updateAutoBackupButton();
                     this.startAutoBackup();
                 }
-                // Update footer with current state
-                this.updateFooter();
                 // Auto-backup on page close
                 window.addEventListener('beforeunload', () => {
                     if (this.autoBackupEnabled && this.directoryHandle) {
@@ -3305,9 +3452,32 @@
                         this.closeStorageModal();
                     }
                 });
+                
+                // File storage setup wizard
+                document.getElementById('close-setup-wizard').addEventListener('click', () => this.closeFileStorageSetupWizard());
+                document.getElementById('file-storage-setup-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'file-storage-setup-modal') {
+                        this.closeFileStorageSetupWizard();
+                    }
+                });
+                
+                // Storage settings
+                document.getElementById('storage-settings-btn').addEventListener('click', () => this.showStorageSettings());
+                document.getElementById('close-storage-settings').addEventListener('click', () => this.closeStorageSettings());
+                document.getElementById('switch-to-file-btn').addEventListener('click', () => this.switchToFileStorage());
+                document.getElementById('switch-to-browser-btn').addEventListener('click', () => this.switchToBrowserStorage());
+                document.getElementById('change-file-location-btn').addEventListener('click', () => this.changeFileLocation());
+                document.getElementById('clear-file-storage-btn').addEventListener('click', () => this.clearFileStorage());
+                document.getElementById('storage-settings-modal').addEventListener('click', (e) => {
+                    if (e.target.id === 'storage-settings-modal') {
+                        this.closeStorageSettings();
+                    }
+                });
             }
 
             loadTasks() {
+                // NOTE: This is now a sync wrapper. File loading happens in init() before this
+                // If file storage is enabled, tasks will already be loaded
                 try {
                     const stored = localStorage.getItem('tasks');
                     if (!stored) return [];
@@ -3319,7 +3489,7 @@
                         // Decompress using LZ-String
                         const decompressed = LZString.decompressFromUTF16(stored);
                         tasks = JSON.parse(decompressed);
-                        console.log(`📦 Loaded ${tasks.length} tasks (decompressed)`);
+                        console.log(`📦 Loaded ${tasks.length} tasks (decompressed from localStorage)`);
                     } else {
                         // Legacy uncompressed data
                         tasks = JSON.parse(stored);
@@ -3341,8 +3511,8 @@
                 }
             }
 
-            // Performance Optimization: Debounced LocalStorage Writes
-            // Reduces localStorage writes by 80-95% by batching rapid changes
+            // Performance Optimization: Debounced Writes (file or localStorage)
+            // Reduces writes by 80-95% by batching rapid changes
             saveTasks(immediate = false) {
                 // Clear any pending save
                 if (this.saveTimeout) {
@@ -3354,16 +3524,23 @@
                 
                 // If immediate save requested (e.g., before page unload), save now
                 if (immediate) {
-                    this.saveToLocalStorage();
+                    if (this.useFileStorage && this.fileStorageReady) {
+                        this.saveToFile();
+                    } else {
+                        this.saveToLocalStorage();
+                    }
                     this.pendingSave = false;
                     return;
                 }
                 
                 // Otherwise, debounce the save (wait 500ms after last change)
                 this.saveTimeout = setTimeout(() => {
-                    this.saveToLocalStorage();
+                    if (this.useFileStorage && this.fileStorageReady) {
+                        this.saveToFile();
+                    } else {
+                        this.saveToLocalStorage();
+                    }
                     this.pendingSave = false;
-                    console.log('Tasks saved to localStorage (debounced + compressed)');
                 }, 500); // Wait 500ms after last change
             }
             
@@ -3385,6 +3562,295 @@
                     // Fallback to uncompressed if compression fails
                     localStorage.setItem('tasks', JSON.stringify(this.tasks));
                     localStorage.setItem('tasksCompressed', 'false');
+                }
+            }
+            
+            // ==================== FILE-BASED STORAGE SYSTEM ====================
+            // Saves tasks to a local file instead of localStorage
+            
+            async saveToFile() {
+                if (!this.taskFileHandle || !this.fileStorageReady) {
+                    console.log('⚠️ File storage not ready, falling back to localStorage');
+                    this.saveToLocalStorage();
+                    return;
+                }
+                
+                try {
+                    // Check permission (don't request here, it should already be granted)
+                    const permission = await this.taskFileHandle.queryPermission({ mode: 'readwrite' });
+                    if (permission !== 'granted') {
+                        console.warn('File permission not granted, falling back to localStorage');
+                        this.saveToLocalStorage();
+                        return;
+                    }
+                    
+                    // Prepare data
+                    const data = {
+                        version: '1.0',
+                        timestamp: new Date().toISOString(),
+                        tasks: this.tasks
+                    };
+                    
+                    // Write to file
+                    const writable = await this.taskFileHandle.createWritable();
+                    await writable.write(JSON.stringify(data, null, 2));
+                    await writable.close();
+                    
+                    console.log(`📄 Saved ${this.tasks.length} tasks to file`);
+                    this.updateFileStorageIndicator(true);
+                    
+                    // Also save minimal data to localStorage as backup (just metadata)
+                    localStorage.setItem('lastFileSaveTime', new Date().toISOString());
+                    localStorage.setItem('taskCount', this.tasks.length.toString());
+                    
+                } catch (e) {
+                    console.error('Failed to save to file:', e);
+                    this.updateFileStorageIndicator(false);
+                    // Fallback to localStorage
+                    this.saveToLocalStorage();
+                }
+            }
+            
+            async loadFromFile() {
+                if (!this.taskFileHandle || !this.fileStorageReady) {
+                    console.log('⚠️ File storage not ready, loading from localStorage');
+                    return [];
+                }
+                
+                try {
+                    const file = await this.taskFileHandle.getFile();
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    
+                    console.log(`📄 Loaded ${data.tasks.length} tasks from file (saved: ${new Date(data.timestamp).toLocaleString()})`);
+                    this.updateFileStorageIndicator(true);
+                    return data.tasks || [];
+                    
+                } catch (e) {
+                    console.error('Failed to load from file:', e);
+                    this.updateFileStorageIndicator(false);
+                    return [];
+                }
+            }
+            
+            async setupFileStorage(createNew = false) {
+                try {
+                    // Check if File System Access API is supported
+                    if (!('showDirectoryPicker' in window)) {
+                        throw new Error('File System Access API not supported');
+                    }
+                    
+                    // Let user select a directory
+                    const dirHandle = await window.showDirectoryPicker({
+                        mode: 'readwrite',
+                        startIn: 'documents'
+                    });
+                    
+                    // CRITICAL: Request permission immediately while user gesture is active
+                    const permission = await dirHandle.queryPermission({ mode: 'readwrite' });
+                    if (permission !== 'granted') {
+                        const granted = await dirHandle.requestPermission({ mode: 'readwrite' });
+                        if (granted !== 'granted') {
+                            alert('⚠️ Folder permission denied. Cannot use file storage.');
+                            return false;
+                        }
+                    }
+                    
+                    // Try to get tasks.json from the directory
+                    let fileHandle;
+                    let existingTasks = null;
+                    
+                    try {
+                        // Check if tasks.json already exists
+                        fileHandle = await dirHandle.getFileHandle('tasks.json', { create: false });
+                        
+                        // File exists, try to read it
+                        const file = await fileHandle.getFile();
+                        const text = await file.text();
+                        
+                        if (text.trim()) {
+                            try {
+                                const data = JSON.parse(text);
+                                if (data.tasks && data.tasks.length > 0) {
+                                    existingTasks = data.tasks;
+                                    const confirmed = confirm(`Found existing tasks.json with ${data.tasks.length} tasks!\n\nDo you want to load these tasks?\n\nYes = Load tasks from file\nNo = Keep current tasks and overwrite file`);
+                                    if (confirmed) {
+                                        this.tasks = existingTasks;
+                                        console.log(`✅ Loaded ${this.tasks.length} tasks from existing file`);
+                                        // Initialize collapsed state
+                                        this.tasks.forEach(task => {
+                                            if (!(task.id in this.collapsedTasks)) {
+                                                this.collapsedTasks[task.id] = true;
+                                            }
+                                        });
+                                    } else {
+                                        console.log(`📝 Keeping current ${this.tasks.length} tasks, will overwrite file`);
+                                    }
+                                }
+                            } catch (parseError) {
+                                console.warn('File exists but could not parse JSON:', parseError);
+                            }
+                        }
+                    } catch (e) {
+                        // tasks.json doesn't exist, will create it
+                        console.log('tasks.json not found, will create new file');
+                        fileHandle = await dirHandle.getFileHandle('tasks.json', { create: true });
+                    }
+                    
+                    this.taskFileHandle = fileHandle;
+                    this.taskDirectoryHandle = dirHandle; // Save directory handle too
+                    
+                    // Save both handles to IndexedDB for persistence
+                    await this.saveFileHandle(fileHandle, 'taskFile');
+                    await this.saveFileHandle(dirHandle, 'taskDirectory');
+                    
+                    this.fileStorageReady = true;
+                    this.useFileStorage = true;
+                    localStorage.setItem('useFileStorage', 'true');
+                    localStorage.setItem('taskDirectoryName', dirHandle.name);
+                    
+                    // Write current tasks to file immediately (permission already granted)
+                    await this.saveToFile();
+                    
+                    console.log('✅ File storage configured');
+                    return true;
+                    
+                } catch (e) {
+                    if (e.name === 'AbortError') {
+                        console.log('Folder selection cancelled');
+                    } else {
+                        console.error('Failed to setup file storage:', e);
+                    }
+                    return false;
+                }
+            }
+            
+            async restoreFileStorageHandle() {
+                try {
+                    // Try to restore directory handle first (new method)
+                    const dirHandle = await this.getFileHandle('taskDirectory');
+                    if (dirHandle && dirHandle.queryPermission) {
+                        // Verify directory permission
+                        const dirPermission = await dirHandle.queryPermission({ mode: 'readwrite' });
+                        if (dirPermission === 'granted') {
+                            // Try to get tasks.json from directory
+                            try {
+                                const fileHandle = await dirHandle.getFileHandle('tasks.json', { create: false });
+                                this.taskDirectoryHandle = dirHandle;
+                                this.taskFileHandle = fileHandle;
+                                this.fileStorageReady = true;
+                                console.log('✅ File storage handle restored (directory method)');
+                                return true;
+                            } catch (e) {
+                                console.warn('Directory found but tasks.json missing, will create it');
+                                const fileHandle = await dirHandle.getFileHandle('tasks.json', { create: true });
+                                this.taskDirectoryHandle = dirHandle;
+                                this.taskFileHandle = fileHandle;
+                                this.fileStorageReady = true;
+                                return true;
+                            }
+                        }
+                    }
+                    
+                    // Fallback: Try old file handle method (for backward compatibility)
+                    const handle = await this.getFileHandle('taskFile');
+                    if (!handle) {
+                        console.log('⚠️ No file handle found in storage');
+                        return false;
+                    }
+                    
+                    // Check if it's a valid file handle
+                    if (!handle.queryPermission) {
+                        console.warn('⚠️ Invalid file handle, clearing storage');
+                        await this.removeFileHandle('taskFile');
+                        await this.removeFileHandle('taskDirectory');
+                        return false;
+                    }
+                    
+                    // Verify we still have permission
+                    const permission = await handle.queryPermission({ mode: 'readwrite' });
+                    if (permission === 'granted') {
+                        this.taskFileHandle = handle;
+                        this.fileStorageReady = true;
+                        console.log('✅ File storage handle restored (file method)');
+                        return true;
+                    } else {
+                        console.warn('⚠️ File storage permission not granted');
+                        this.fileStorageReady = false;
+                        return false;
+                    }
+                } catch (e) {
+                    console.error('Failed to restore file handle:', e);
+                    this.fileStorageReady = false;
+                    return false;
+                }
+            }
+            
+            async saveFileHandle(handle, key) {
+                try {
+                    const db = await this.openDB();
+                    const tx = db.transaction('fileHandles', 'readwrite');
+                    const store = tx.objectStore('fileHandles');
+                    store.put(handle, key);
+                    
+                    return new Promise((resolve, reject) => {
+                        tx.oncomplete = () => {
+                            db.close();
+                            resolve();
+                        };
+                        tx.onerror = () => {
+                            db.close();
+                            reject(tx.error);
+                        };
+                    });
+                } catch (e) {
+                    console.error('Failed to save file handle:', e);
+                    throw e;
+                }
+            }
+            
+            async getFileHandle(key) {
+                try {
+                    const db = await this.openDB();
+                    const tx = db.transaction('fileHandles', 'readonly');
+                    const store = tx.objectStore('fileHandles');
+                    const request = store.get(key);
+                    
+                    return new Promise((resolve, reject) => {
+                        request.onsuccess = () => {
+                            db.close();
+                            resolve(request.result);
+                        };
+                        request.onerror = () => {
+                            db.close();
+                            reject(request.error);
+                        };
+                    });
+                } catch (e) {
+                    console.error('Failed to get file handle:', e);
+                    return null;
+                }
+            }
+            
+            async removeFileHandle(key) {
+                try {
+                    const db = await this.openDB();
+                    const tx = db.transaction('fileHandles', 'readwrite');
+                    const store = tx.objectStore('fileHandles');
+                    store.delete(key);
+                    
+                    return new Promise((resolve, reject) => {
+                        tx.oncomplete = () => {
+                            db.close();
+                            resolve();
+                        };
+                        tx.onerror = () => {
+                            db.close();
+                            reject(tx.error);
+                        };
+                    });
+                } catch (e) {
+                    console.error('Failed to remove file handle:', e);
                 }
             }
 
@@ -3988,6 +4454,243 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             
             closeStorageModal() {
                 document.getElementById('storage-modal').style.display = 'none';
+            }
+            
+            // ==================== FILE STORAGE SETUP WIZARD ====================
+            
+            showFileStorageSetupWizard() {
+                document.getElementById('file-storage-setup-modal').style.display = 'flex';
+            }
+            
+            closeFileStorageSetupWizard() {
+                document.getElementById('file-storage-setup-modal').style.display = 'none';
+                localStorage.setItem('hasSeenFileStorageSetup', 'true');
+            }
+            
+            async selectStorageOption(option) {
+                if (option === 'file') {
+                    // Setup file storage
+                    const success = await this.setupFileStorage();
+                    if (success) {
+                        // Migrate existing tasks if any (though they should already be loaded)
+                        if (this.tasks.length > 0) {
+                            await this.migrateToFileStorage();
+                        }
+                        
+                        const dirName = localStorage.getItem('taskDirectoryName') || 'selected folder';
+                        alert(`✅ File storage configured!\n\nYour tasks are now saved to:\n📁 ${dirName}/tasks.json\n\n✨ File location remembered across browser sessions.\n💡 Browser storage freed for other apps!\n\nTasks loaded: ${this.tasks.length}`);
+                    } else {
+                        // User cancelled or error occurred
+                        alert('⚠️ File storage setup was cancelled or failed.\n\nFalling back to browser storage (localStorage).');
+                        this.useFileStorage = false;
+                        localStorage.setItem('useFileStorage', 'false');
+                    }
+                } else {
+                    // Use browser storage
+                    this.useFileStorage = false;
+                    this.fileStorageReady = false;
+                    localStorage.setItem('useFileStorage', 'false');
+                }
+                
+                this.closeFileStorageSetupWizard();
+                this.updateFileStorageIndicator();
+                this.updateFooter();
+                
+                // Re-render to show tasks
+                this.render();
+            }
+            
+            // ==================== MIGRATION TOOL ====================
+            
+            async migrateToFileStorage() {
+                try {
+                    console.log(`🔄 Migrating ${this.tasks.length} tasks to file storage...`);
+                    
+                    // Save all tasks to file
+                    await this.saveToFile();
+                    
+                    // Clear tasks from localStorage to free space
+                    localStorage.removeItem('tasks');
+                    localStorage.removeItem('tasksCompressed');
+                    
+                    console.log('✅ Migration complete! Browser storage cleared.');
+                    return true;
+                } catch (e) {
+                    console.error('Migration failed:', e);
+                    return false;
+                }
+            }
+            
+            async switchToFileStorage() {
+                // Called from settings to switch from localStorage to file
+                if (this.useFileStorage) {
+                    alert('⚠️ File storage is already enabled.');
+                    return;
+                }
+                
+                const confirmed = confirm('🔄 Switch to File Storage?\n\nThis will:\n• Move all tasks from browser to a file\n• Free up browser storage space\n• Require folder permission\n\nContinue?');
+                if (!confirmed) return;
+                
+                const success = await this.setupFileStorage();
+                if (success) {
+                    await this.migrateToFileStorage();
+                    
+                    // Close the settings modal
+                    this.closeStorageSettings();
+                    
+                    // Update all indicators
+                    this.updateFileStorageIndicator();
+                    this.updateFooter();
+                    
+                    // Re-render to show tasks
+                    this.render();
+                    
+                    const dirName = localStorage.getItem('taskDirectoryName') || 'selected folder';
+                    alert(`✅ Successfully switched to file storage!\n\nYour tasks are now saved to:\n📁 ${dirName}/tasks.json\n\nTasks loaded: ${this.tasks.length}`);
+                }
+            }
+            
+            async switchToBrowserStorage() {
+                // Called from settings to switch from file to localStorage
+                if (!this.useFileStorage) {
+                    alert('⚠️ Browser storage is already enabled.');
+                    return;
+                }
+                
+                const confirmed = confirm('⚠️ Switch to Browser Storage?\n\nThis will:\n• Copy all tasks from file to browser\n• Use limited localStorage space\n• Disable file storage\n\nContinue?');
+                if (!confirmed) return;
+                
+                try {
+                    // Load tasks from file one last time
+                    const fileTasks = await this.loadFromFile();
+                    if (fileTasks.length > 0) {
+                        this.tasks = fileTasks;
+                    }
+                    
+                    // Switch to localStorage
+                    this.useFileStorage = false;
+                    this.fileStorageReady = false;
+                    localStorage.setItem('useFileStorage', 'false');
+                    
+                    // Save to localStorage
+                    this.saveToLocalStorage();
+                    
+                    // Remove file handle
+                    await this.removeFileHandle('taskFile');
+                    this.taskFileHandle = null;
+                    
+                    this.updateFileStorageIndicator();
+                    this.updateFooter();
+                    alert('✅ Switched to browser storage!\n\nYour tasks are now saved in localStorage.');
+                    
+                } catch (e) {
+                    console.error('Switch failed:', e);
+                    alert('❌ Failed to switch storage method. Your tasks are safe in the file.');
+                }
+            }
+            
+            // ==================== STORAGE SETTINGS UI ====================
+            
+            showStorageSettings() {
+                // Update current storage display
+                const display = document.getElementById('current-storage-display');
+                if (this.useFileStorage && this.fileStorageReady) {
+                    display.innerHTML = `
+                        <span style="font-size: 24px;">📁</span>
+                        <div>
+                            <div style="font-weight: 600;">File Storage</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Tasks saved to local file</div>
+                        </div>
+                    `;
+                } else {
+                    display.innerHTML = `
+                        <span style="font-size: 24px;">🌐</span>
+                        <div>
+                            <div style="font-weight: 600;">Browser Storage</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Tasks saved in localStorage (~5MB limit)</div>
+                        </div>
+                    `;
+                }
+                
+                // Show/hide buttons based on current storage
+                const switchToFile = document.getElementById('switch-to-file-btn');
+                const switchToBrowser = document.getElementById('switch-to-browser-btn');
+                const changeLocation = document.getElementById('change-file-location-btn');
+                
+                if (this.useFileStorage) {
+                    switchToFile.style.display = 'none';
+                    switchToBrowser.style.display = 'block';
+                    changeLocation.style.display = 'block';
+                } else {
+                    switchToFile.style.display = 'block';
+                    switchToBrowser.style.display = 'none';
+                    changeLocation.style.display = 'none';
+                }
+                
+                document.getElementById('storage-settings-modal').style.display = 'flex';
+            }
+            
+            closeStorageSettings() {
+                document.getElementById('storage-settings-modal').style.display = 'none';
+            }
+            
+            async changeFileLocation() {
+                const confirmed = confirm('📂 Change File Location?\n\nThis will:\n• Let you select a new folder\n• Copy all tasks to the new location\n• Update the saved file path\n\nContinue?');
+                if (!confirmed) return;
+                
+                try {
+                    // Setup new file location
+                    const success = await this.setupFileStorage();
+                    if (success) {
+                        // Save tasks to new location
+                        await this.saveToFile();
+                        this.updateFileStorageIndicator();
+                        this.updateFooter();
+                        this.closeStorageSettings();
+                        
+                        const dirName = localStorage.getItem('taskDirectoryName') || 'selected folder';
+                        alert(`✅ File location updated!\n\nYour tasks are now saved to:\n📁 ${dirName}/tasks.json`);
+                    }
+                } catch (e) {
+                    console.error('Failed to change file location:', e);
+                    alert('❌ Failed to change file location. Your tasks are still safe at the original location.');
+                }
+            }
+            
+            async clearFileStorage() {
+                const confirmed = confirm('🗑️ Reset File Storage?\n\n⚠️ WARNING: This will:\n• Clear all file storage settings\n• Remove saved folder permissions\n• Switch back to browser storage\n• Your tasks will be safe in localStorage\n\nThis is useful if you have permission errors.\n\nContinue?');
+                if (!confirmed) return;
+                
+                try {
+                    // Clear all file storage data
+                    await this.removeFileHandle('taskFile');
+                    await this.removeFileHandle('taskDirectory');
+                    localStorage.removeItem('useFileStorage');
+                    localStorage.removeItem('taskDirectoryName');
+                    localStorage.removeItem('lastFileSaveTime');
+                    localStorage.removeItem('taskCount');
+                    localStorage.removeItem('hasSeenFileStorageSetup');
+                    
+                    // Reset state
+                    this.useFileStorage = false;
+                    this.fileStorageReady = false;
+                    this.taskFileHandle = null;
+                    this.taskDirectoryHandle = null;
+                    
+                    // Save tasks to localStorage
+                    this.saveToLocalStorage();
+                    
+                    // Update UI
+                    this.updateFileStorageIndicator();
+                    this.updateFooter();
+                    this.closeStorageSettings();
+                    
+                    alert('✅ File storage reset complete!\n\nYou can now set up file storage again from scratch.\n\nYour tasks are safe in browser storage.');
+                    
+                } catch (e) {
+                    console.error('Failed to clear file storage:', e);
+                    alert('❌ Failed to reset file storage. Please try refreshing the page.');
+                }
             }
             
             async copyStorageToClipboard() {
@@ -5414,14 +6117,56 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
 
             updateFooter() {
                 const footer = document.getElementById('footer-text');
-                const baseText = '<strong>Task List Manager</strong> • All tasks are saved locally in your browser • Version 1.0';
+                let storageText = '';
+                
+                // Show storage method
+                if (this.useFileStorage && this.fileStorageReady) {
+                    const dirName = localStorage.getItem('taskDirectoryName') || 'File';
+                    storageText = `📁 <span style="color: #4ade80;">${dirName}/tasks.json</span>`;
+                } else if (this.useFileStorage && !this.fileStorageReady) {
+                    storageText = '⚠️ <span style="color: #fbbf24;">File Storage (permission needed)</span>';
+                } else {
+                    storageText = '🌐 <span style="color: #6b7280;">Browser Storage</span>';
+                }
+                
+                const baseText = `<strong>Task List Manager</strong> • ${storageText} • Version 1.0`;
                 
                 if (this.autoBackupEnabled && this.autoBackupDirName) {
-                    footer.innerHTML = `<strong>Task List Manager</strong> • All tasks are saved locally in your browser • Auto-backup: <code style="background: rgba(34, 197, 94, 0.15); color: #4ade80; padding: 2px 6px; border-radius: 3px; font-size: 12px;">${this.autoBackupDirName}/tasks-auto-backup.json</code> • Version 1.0`;
+                    footer.innerHTML = `<strong>Task List Manager</strong> • ${storageText} • Auto-backup: <code style="background: rgba(34, 197, 94, 0.15); color: #4ade80; padding: 2px 6px; border-radius: 3px; font-size: 12px;">${this.autoBackupDirName}/tasks-auto-backup.json</code> • Version 1.0`;
                 } else if (this.autoBackupEnabled && !this.directoryHandle) {
-                    footer.innerHTML = `<strong>Task List Manager</strong> • All tasks are saved locally in your browser • <span style="color: #fbbf24;">⚠️ Auto-backup enabled but needs folder access (click Auto-Backup button)</span> • Version 1.0`;
+                    footer.innerHTML = `<strong>Task List Manager</strong> • ${storageText} • <span style="color: #fbbf24;">⚠️ Auto-backup enabled but needs folder access (click Auto-Backup button)</span> • Version 1.0`;
                 } else {
                     footer.innerHTML = baseText;
+                }
+            }
+            
+            updateFileStorageIndicator(success = null) {
+                const indicator = document.getElementById('file-storage-indicator');
+                if (!indicator) return;
+                
+                if (this.useFileStorage && this.fileStorageReady) {
+                    indicator.innerHTML = '📁 File';
+                    indicator.style.background = 'rgba(34, 197, 94, 0.15)';
+                    indicator.style.color = '#4ade80';
+                    indicator.title = 'Tasks saved to local file';
+                } else if (this.useFileStorage && !this.fileStorageReady) {
+                    indicator.innerHTML = '⚠️ File';
+                    indicator.style.background = 'rgba(251, 191, 36, 0.15)';
+                    indicator.style.color = '#fbbf24';
+                    indicator.title = 'File storage enabled but permission needed';
+                } else {
+                    indicator.innerHTML = '🌐 Browser';
+                    indicator.style.background = 'rgba(107, 114, 128, 0.15)';
+                    indicator.style.color = '#6b7280';
+                    indicator.title = 'Tasks saved in browser (localStorage)';
+                }
+                
+                // Flash indicator on save
+                if (success !== null) {
+                    indicator.style.transform = 'scale(1.1)';
+                    setTimeout(() => {
+                        indicator.style.transform = 'scale(1)';
+                    }, 200);
                 }
             }
 
