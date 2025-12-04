@@ -1124,6 +1124,32 @@
             width: 100%;
         }
 
+        .task-id {
+            font-size: 11px;
+            color: var(--text-muted, #8b949e);
+            margin-top: 2px;
+            margin-bottom: 6px;
+            font-family: 'Courier New', monospace;
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .task-id:hover {
+            background: rgba(255, 168, 52, 0.1);
+            color: var(--primary-orange, #ffa834);
+            box-shadow: 0 0 8px rgba(255, 168, 52, 0.3);
+        }
+
+        .task-id.copied {
+            color: #3fb950;
+            box-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
+        }
+
         .task-item.completed .task-title {
             text-decoration: line-through;
         }
@@ -4206,6 +4232,30 @@
                 }
             }
 
+            async copyTaskId(id, event) {
+                try {
+                    await navigator.clipboard.writeText(id.toString());
+                    
+                    // Visual feedback - flash green
+                    const taskIdElement = event.currentTarget;
+                    taskIdElement.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        taskIdElement.classList.remove('copied');
+                    }, 1500);
+                    
+                    console.log(`📋 Copied task ID: ${id}`);
+                } catch (e) {
+                    console.error('Failed to copy task ID:', e);
+                    // Fallback: select the text
+                    const range = document.createRange();
+                    range.selectNodeContents(event.currentTarget);
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+            }
+
             async archiveTask(id) {
                 const task = this.tasks.find(t => t.id === id);
                 if (task) {
@@ -5147,6 +5197,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                                 ${this.escapeHtml(task.title)}
                                 ${task.archived ? '<span class="archived-badge">Archived</span>' : ''}
                             </h3>
+                            <div class="task-id" onclick="taskManager.copyTaskId(${task.id}, event)" title="Click to copy ID">
+                                ID: ${task.id}
+                            </div>
                             ${!isCollapsed ? `
                                 ${task.content ? `<p class="task-description">${this.escapeHtml(task.content)}</p>` : ''}
                                 ${task.tags && task.tags.length > 0 ? `
