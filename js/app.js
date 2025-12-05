@@ -3621,7 +3621,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             const check = subtask.completed ? '✓' : '○';
                             const dateStr = subtask.completedAt ? 
                                 ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
-                            text += `     ${check} ${subtask.text}${dateStr}\n`;
+                            // Indent wrapped lines for multi-line subtask text
+                            const indentedText = subtask.text.replace(/\n/g, '\n         ');
+                            text += `     ${check} ${indentedText}${dateStr}\n`;
                         });
                     }
                 }
@@ -3669,7 +3671,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             const check = subtask.completed ? '✅' : '⭕';
                             const dateStr = subtask.completedAt ? 
                                 ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
-                            text += `      ${check} ${subtask.text}${dateStr}\n`;
+                            // Indent wrapped lines for multi-line subtask text
+                            const indentedText = subtask.text.replace(/\n/g, '\n         ');
+                            text += `      ${check} ${indentedText}${dateStr}\n`;
                         });
                     }
                 }
@@ -3721,11 +3725,12 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                         html += `<p style="margin: 4px 0 2px 16px; font-size: 12px; font-weight: 600;">Subtasks:</p>`;
                         html += `<ul style="margin: 2px 0 4px 32px; list-style: none; padding: 0;">`;
                         subtasksToShow.forEach(subtask => {
-                            const check = subtask.completed ? '✅' : '⭕';
+                            const check = subtask.completed 
+                                ? '<span style="color: #10b981;">✓</span>' 
+                                : '<span style="color: #9ca3af;">○</span>';
                             const dateStr = subtask.completedAt ? 
                                 ` <span style="color: #6b7280; font-size: 11px;">(${new Date(subtask.completedAt).toLocaleDateString('en-US')})</span>` : '';
-                            const textStyle = subtask.completed ? 'text-decoration: line-through; opacity: 0.7;' : '';
-                            html += `<li style="margin: 2px 0;${textStyle}">${check} ${this.escapeHtml(subtask.text)}${dateStr}</li>`;
+                            html += `<li style="margin: 2px 0;">${check} ${this.escapeHtml(subtask.text)}${dateStr}</li>`;
                         });
                         html += `</ul>`;
                     }
