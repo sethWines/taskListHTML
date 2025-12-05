@@ -1,0 +1,209 @@
+# Task List Application - AI Assistant Guidelines
+
+## Architecture Overview
+
+### Dual File Structure
+This application maintains **two versions of the same code**:
+- `index.html` - Standalone single-file version with embedded JavaScript
+- `js/app.js` - Modular version with separated JavaScript
+
+**CRITICAL**: When modifying task/subtask logic, you MUST update BOTH files to keep them synchronized.
+
+### Key Technologies
+- Vanilla JavaScript (no frameworks)
+- Local Storage for data persistence
+- Web Workers for export generation
+- Intersection Observer for lazy rendering
+- CSS Custom Properties for theming
+
+## Data Structure
+
+### Task Object
+```javascript
+{
+  id: number,                    // Unique timestamp-based ID
+  title: string,                 // Task title
+  content: string,               // Task description/notes
+  completed: boolean,
+  completedAt: string | null,    // ISO date string when completed
+  archived: boolean,
+  archivedAt: string | null,
+  priority: 'low'|'medium'|'high',
+  category: string,
+  subtasks: Array<Subtask>,
+  tags: Array<string>,
+  dueDate: string | null,        // ISO date string
+  createdAt: string,             // ISO date string
+  updatedAt: string              // ISO date string
+}
+```
+
+### Subtask Object
+```javascript
+{
+  id: number,                    // Unique timestamp-based ID
+  text: string,
+  completed: boolean,
+  completedAt: string | null     // ISO date string - CRITICAL for badges
+}
+```
+
+## Critical Features to Preserve
+
+### 1. Subtask Completion Badges
+**Location**: Lines ~3079-3137 in both files
+
+The `updateSubtaskDOM()` function is a **performance optimization** that updates individual subtasks without re-rendering the entire task list.
+
+**MUST handle**:
+- ✅ Creating completion date badge when subtask is checked
+- ✅ Removing badge when subtask is unchecked
+- ✅ Updating existing badge if date changes
+- ✅ Proper positioning (before Edit/Delete buttons)
+
+**Badge HTML Structure**:
+```html
+<span class="subtask-completed-date">✓ Dec 5</span>
+```
+
+**Date Format Consistency**:
+```javascript
+new Date(completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+```
+
+### 2. Export System (Dual Format)
+
+**Main Thread Export** (`formatTaskForExport()`):
+- Used for general text export
+- Located around lines 3515-3580
+- Includes subtask completion dates
+- Format: `✓ Subtask text (12/5/2024)`
+
+**Web Worker Export**:
+- Used for email-optimized export
+- Embedded as string in `showExport()` function (~lines 3600-3700)
+- Must match main thread export functionality
+- Keeps UI responsive during large exports
+
+**IMPORTANT**: Both export methods must be kept in sync for feature parity.
+
+### 3. Performance Optimizations
+
+#### Granular DOM Updates
+- `updateSubtaskDOM()` - Update single subtask without re-render
+- `updateSubtaskProgressDOM()` - Update progress bar only
+- `updateTaskDOM()` - Update single task card
+
+#### Lazy Rendering
+- Intersection Observer monitors task cards
+- Tasks render only when entering viewport
+- Improves performance with 100+ tasks
+
+#### Web Workers
+- Export generation runs in worker thread
+- UI remains responsive during export
+- Worker code embedded as string (must escape backslashes)
+
+### 4. Theme System
+
+Uses CSS custom properties defined in `css/themes.css`:
+```css
+--bg-primary: background color
+--text-primary: text color
+--color-{category}: category colors
+```
+
+Theme applied via `data-theme` attribute on document.
+
+## Common Modification Patterns
+
+### Adding a Field to Tasks/Subtasks
+
+1. Update data structure in both files
+2. Update `renderTask()` or `renderSubtask()` to display the field
+3. Update relevant DOM update functions (e.g., `updateSubtaskDOM()`)
+4. Update both export functions (main thread + Web Worker)
+5. Consider migration for existing localStorage data
+
+### Modifying Export Formats
+
+1. Update `formatTaskForExport()` in both files
+2. Update Web Worker code string (remember `\\n` for newlines)
+3. Test with various task configurations
+4. Verify date formatting consistency
+
+### Adding UI Controls
+
+1. Add HTML elements to modal/form
+2. Wire up event listeners
+3. Update relevant functions to accept new parameters
+4. Sync changes between `index.html` and `js/app.js`
+
+## Code Location Reference
+
+### Key Functions (approximate line numbers in js/app.js)
+
+- `toggleSubtask()` - ~1816: Handles checkbox state and completedAt
+- `updateSubtaskDOM()` - ~3079: Granular subtask updates WITH BADGES
+- `renderSubtask()` - ~2681: Renders subtask HTML with badge
+- `formatTaskForExport()` - ~3515: Main thread export formatter
+- `showExport()` - ~3584: Export modal with Web Worker code
+- `saveTasks()` - ~1574: Persists to localStorage
+- `render()` - ~2467: Full task list render
+
+### Export Modal HTML
+- Located in `<div id="export-modal">` section
+- Contains preview area and copy button
+- Add new controls here for export options
+
+## Testing Checklist
+
+When making changes, verify:
+
+- [ ] Changes applied to BOTH `index.html` AND `js/app.js`
+- [ ] Subtask badges appear/disappear correctly on checkbox toggle
+- [ ] Export includes all expected data
+- [ ] Web Worker export matches main thread export
+- [ ] Date formats are consistent across all displays
+- [ ] No console errors
+- [ ] localStorage data structure still valid
+- [ ] Theme switching works
+- [ ] Performance acceptable with 50+ tasks
+
+## Debugging Tips
+
+### Common Issues
+
+**Badges not appearing**: Check `updateSubtaskDOM()` includes badge logic
+
+**Export discrepancies**: Compare main thread vs Web Worker code
+
+**Dates showing wrong**: Verify timezone handling and format strings
+
+**Changes only work in one file**: Remember to sync both files!
+
+### Console Logging
+
+The app uses emoji prefixes for log categories:
+- `✨` - Performance optimizations triggered
+- `⚡` - Theme/UI changes
+- `💾` - Storage operations
+
+## Best Practices
+
+1. **Always sync both files** when modifying task/subtask logic
+2. **Preserve date format consistency** across all features
+3. **Test with real data** from localStorage
+4. **Consider performance** - use granular updates when possible
+5. **Maintain export parity** between worker and main thread
+6. **Document breaking changes** that affect stored data
+7. **Test theme switching** after CSS/UI changes
+
+## Recent Changes
+
+### 2025-12-05: Fixed Subtask Completion Badges
+- Updated `updateSubtaskDOM()` to create/remove completion date badges
+- Fixed Web Worker export to include subtask completion dates
+- Both changes applied to `index.html` and `js/app.js`
+- Badges now appear immediately when subtasks are checked/unchecked
+

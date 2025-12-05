@@ -3494,7 +3494,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             }
 
             // Export functionality
-            generateExportText() {
+            generateExportText(format = 'plain', filterOldSubtasks = false) {
                 const now = new Date();
                 const dateStr = now.toLocaleDateString('en-US', { 
                     weekday: 'long', 
@@ -3507,6 +3507,42 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 const active = nonArchived.filter(t => !t.completed);
                 const completed = nonArchived.filter(t => t.completed);
 
+                // Choose formatter based on format
+                const formatter = format === 'outlook-html' ? 'formatTaskForOutlookHTML' :
+                                format === 'outlook-plain' ? 'formatTaskForOutlookPlain' :
+                                'formatTaskForExport';
+
+                // For HTML format, wrap in HTML structure
+                if (format === 'outlook-html') {
+                    let html = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6;">`;
+                    html += `<h2 style="margin-bottom: 8px;">TASK LIST SUMMARY</h2>`;
+                    html += `<p style="color: #6b7280; margin: 4px 0 16px 0;">Generated: ${dateStr}</p>`;
+                    
+                    html += `<div style="background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 16px;">`;
+                    html += `<strong>OVERVIEW</strong><br>`;
+                    html += `Total Tasks: ${nonArchived.length} | Active: ${active.length} | Completed: ${completed.length}`;
+                    html += `</div>`;
+                    
+                    if (active.length > 0) {
+                        html += `<h3 style="border-bottom: 2px solid #3b82f6; padding-bottom: 4px; margin: 16px 0 8px 0;">ACTIVE TASKS (${active.length})</h3>`;
+                        active.forEach((task, index) => {
+                            html += this[formatter](task, index + 1, false, false, filterOldSubtasks);
+                        });
+                    }
+                    
+                    if (completed.length > 0) {
+                        html += `<h3 style="border-bottom: 2px solid #10b981; padding-bottom: 4px; margin: 16px 0 8px 0;">COMPLETED TASKS (${completed.length})</h3>`;
+                        completed.forEach((task, index) => {
+                            html += this[formatter](task, index + 1, true, false, filterOldSubtasks);
+                        });
+                    }
+                    
+                    html += `<p style="color: #6b7280; margin-top: 16px; font-size: 12px; text-align: center;">End of Task List</p>`;
+                    html += `</div>`;
+                    return html;
+                }
+
+                // Plain text formats
                 let text = `TASK LIST SUMMARY\n`;
                 text += `Generated: ${dateStr}\n`;
                 text += `${'='.repeat(60)}\n\n`;
@@ -3521,7 +3557,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     text += `ACTIVE TASKS (${active.length})\n`;
                     text += `${'='.repeat(60)}\n\n`;
                     active.forEach((task, index) => {
-                        text += this.formatTaskForExport(task, index + 1, false);
+                        text += this[formatter](task, index + 1, false, false, filterOldSubtasks);
                     });
                 }
 
@@ -3530,7 +3566,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     text += `COMPLETED TASKS (${completed.length})\n`;
                     text += `${'='.repeat(60)}\n\n`;
                     completed.forEach((task, index) => {
-                        text += this.formatTaskForExport(task, index + 1, true);
+                        text += this[formatter](task, index + 1, true, false, filterOldSubtasks);
                     });
                 }
 
@@ -3540,7 +3576,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 return text;
             }
 
-            formatTaskForExport(task, number, isCompleted, isArchived = false) {
+            formatTaskForExport(task, number, isCompleted, isArchived = false, filterOldSubtasks = false) {
                 let text = `${number}. ${task.title}\n`;
                 
                 // Priority and Category line appears right after the title
@@ -3564,30 +3600,174 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 
                 // Subtasks appear at the end
                 if (task.subtasks && task.subtasks.length > 0) {
-                    text += `   Subtasks:\n`;
-                    task.subtasks.forEach(subtask => {
-                        const check = subtask.completed ? '✓' : '○';
-                        const dateStr = subtask.completedAt ? 
-                            ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
-                        text += `     ${check} ${subtask.text}${dateStr}\n`;
-                    });
+                    // Filter old subtasks if requested
+                    let subtasksToShow = task.subtasks;
+                    if (filterOldSubtasks) {
+                        const sevenDaysAgo = new Date();
+                        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                        subtasksToShow = task.subtasks.filter(subtask => {
+                            // Keep if not completed OR if completed within last 7 days
+                            if (!subtask.completed || !subtask.completedAt) {
+                                return true;
+                            }
+                            const completedDate = new Date(subtask.completedAt);
+                            return completedDate >= sevenDaysAgo;
+                        });
+                    }
+                    
+                    if (subtasksToShow.length > 0) {
+                        text += `   Subtasks:\n`;
+                        subtasksToShow.forEach(subtask => {
+                            const check = subtask.completed ? '✓' : '○';
+                            const dateStr = subtask.completedAt ? 
+                                ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
+                            text += `     ${check} ${subtask.text}${dateStr}\n`;
+                        });
+                    }
                 }
                 
                 text += `\n`;
                 return text;
             }
 
-            showExportModal() {
-                // Performance Optimization: Use Web Worker for large exports
-                // This keeps UI responsive even with 500+ tasks
-                if (this.tasks.length > 100 && typeof Worker !== 'undefined') {
-                    this.generateExportWithWorker();
-                } else {
-                    // Fallback for small task lists or browsers without Worker support
-                    const exportText = this.generateExportText();
-                    document.getElementById('export-preview').textContent = exportText;
-                    document.getElementById('export-modal').style.display = 'block';
+            // Outlook-optimized plain text formatter
+            formatTaskForOutlookPlain(task, number, isCompleted, isArchived = false, filterOldSubtasks = false) {
+                let text = `${number}. ${task.title}\n`;
+                
+                // Use bullet points and symbols that render well in Outlook
+                text += `   • Priority: ${task.priority.toUpperCase()} | Category: ${task.category}`;
+                
+                if (isCompleted && task.completedAt) {
+                    const date = new Date(task.completedAt).toLocaleDateString('en-US');
+                    text += ` | ✅ Completed: ${date}`;
                 }
+                
+                if (isArchived) {
+                    text += ` | 📦 ARCHIVED`;
+                }
+                
+                text += `\n`;
+                
+                if (task.content) {
+                    text += `   ${task.content.replace(/\n/g, '\n   ')}\n`;
+                }
+                
+                if (task.subtasks && task.subtasks.length > 0) {
+                    let subtasksToShow = task.subtasks;
+                    if (filterOldSubtasks) {
+                        const sevenDaysAgo = new Date();
+                        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                        subtasksToShow = task.subtasks.filter(subtask => {
+                            if (!subtask.completed || !subtask.completedAt) return true;
+                            return new Date(subtask.completedAt) >= sevenDaysAgo;
+                        });
+                    }
+                    
+                    if (subtasksToShow.length > 0) {
+                        text += `   Subtasks:\n`;
+                        subtasksToShow.forEach(subtask => {
+                            const check = subtask.completed ? '✅' : '⭕';
+                            const dateStr = subtask.completedAt ? 
+                                ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
+                            text += `      ${check} ${subtask.text}${dateStr}\n`;
+                        });
+                    }
+                }
+                
+                text += `\n`;
+                return text;
+            }
+
+            // Outlook-optimized HTML formatter
+            formatTaskForOutlookHTML(task, number, isCompleted, isArchived = false, filterOldSubtasks = false) {
+                const priorityColors = {
+                    high: '#dc2626',
+                    medium: '#f59e0b',
+                    low: '#10b981'
+                };
+                
+                let html = `<p style="margin: 8px 0;"><strong>${number}. ${this.escapeHtml(task.title)}</strong></p>`;
+                html += `<p style="margin: 4px 0 4px 16px; font-size: 13px;">`;
+                html += `<span style="color: ${priorityColors[task.priority]}; font-weight: 600;">▸ ${task.priority.toUpperCase()}</span>`;
+                html += ` | ${this.escapeHtml(task.category)}`;
+                
+                if (isCompleted && task.completedAt) {
+                    const date = new Date(task.completedAt).toLocaleDateString('en-US');
+                    html += ` | <span style="color: #10b981;">✅ Completed: ${date}</span>`;
+                }
+                
+                if (isArchived) {
+                    html += ` | <span style="color: #6b7280;">📦 ARCHIVED</span>`;
+                }
+                
+                html += `</p>`;
+                
+                if (task.content) {
+                    html += `<p style="margin: 4px 0 4px 16px; white-space: pre-wrap;">${this.escapeHtml(task.content)}</p>`;
+                }
+                
+                if (task.subtasks && task.subtasks.length > 0) {
+                    let subtasksToShow = task.subtasks;
+                    if (filterOldSubtasks) {
+                        const sevenDaysAgo = new Date();
+                        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                        subtasksToShow = task.subtasks.filter(subtask => {
+                            if (!subtask.completed || !subtask.completedAt) return true;
+                            return new Date(subtask.completedAt) >= sevenDaysAgo;
+                        });
+                    }
+                    
+                    if (subtasksToShow.length > 0) {
+                        html += `<p style="margin: 4px 0 2px 16px; font-size: 12px; font-weight: 600;">Subtasks:</p>`;
+                        html += `<ul style="margin: 2px 0 4px 32px; list-style: none; padding: 0;">`;
+                        subtasksToShow.forEach(subtask => {
+                            const check = subtask.completed ? '✅' : '⭕';
+                            const dateStr = subtask.completedAt ? 
+                                ` <span style="color: #6b7280; font-size: 11px;">(${new Date(subtask.completedAt).toLocaleDateString('en-US')})</span>` : '';
+                            const textStyle = subtask.completed ? 'text-decoration: line-through; opacity: 0.7;' : '';
+                            html += `<li style="margin: 2px 0;${textStyle}">${check} ${this.escapeHtml(subtask.text)}${dateStr}</li>`;
+                        });
+                        html += `</ul>`;
+                    }
+                }
+                
+                return html;
+            }
+
+            showExportModal() {
+                // Show modal first
+                document.getElementById('export-modal').style.display = 'block';
+                
+                // Add event listeners for filter checkbox and format radios
+                const filterCheckbox = document.getElementById('filter-old-subtasks');
+                const formatRadios = document.querySelectorAll('input[name="export-format"]');
+                
+                const regenerateExport = () => {
+                    const format = document.querySelector('input[name="export-format"]:checked')?.value || 'plain';
+                    const filterOldSubtasks = filterCheckbox ? filterCheckbox.checked : false;
+                    
+                    // Generate export with selected options
+                    const exportText = this.generateExportText(format, filterOldSubtasks);
+                    const preview = document.getElementById('export-preview');
+                    
+                    // For HTML format, render it; for plain text, show as text
+                    if (format === 'outlook-html') {
+                        preview.innerHTML = exportText;
+                    } else {
+                        preview.textContent = exportText;
+                    }
+                };
+                
+                // Initial generation
+                regenerateExport();
+                
+                // Regenerate on option change
+                if (filterCheckbox) {
+                    filterCheckbox.addEventListener('change', regenerateExport);
+                }
+                formatRadios.forEach(radio => {
+                    radio.addEventListener('change', regenerateExport);
+                });
             }
             
             // Performance Optimization: Generate export in Web Worker (non-blocking)
@@ -3599,12 +3779,12 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 // Create inline worker (keeps app as single file)
                 const workerCode = `
                     self.onmessage = function(e) {
-                        const { tasks } = e.data;
-                        const exportText = generateExportText(tasks);
+                        const { tasks, filterOldSubtasks } = e.data;
+                        const exportText = generateExportText(tasks, filterOldSubtasks);
                         self.postMessage({ exportText });
                     };
                     
-                    function generateExportText(tasks) {
+                    function generateExportText(tasks, filterOldSubtasks) {
                         const now = new Date();
                         const dateStr = now.toLocaleDateString('en-US', { 
                             weekday: 'long', 
@@ -3631,7 +3811,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             text += 'ACTIVE TASKS (' + active.length + ')\\n';
                             text += '='.repeat(60) + '\\n\\n';
                             active.forEach((task, index) => {
-                                text += formatTaskForExport(task, index + 1, false);
+                                text += formatTaskForExport(task, index + 1, false, filterOldSubtasks);
                             });
                         }
                         
@@ -3640,7 +3820,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             text += 'COMPLETED TASKS (' + completed.length + ')\\n';
                             text += '='.repeat(60) + '\\n\\n';
                             completed.forEach((task, index) => {
-                                text += formatTaskForExport(task, index + 1, true);
+                                text += formatTaskForExport(task, index + 1, true, filterOldSubtasks);
                             });
                         }
                         
@@ -3650,7 +3830,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                         return text;
                     }
                     
-                    function formatTaskForExport(task, number, isCompleted) {
+                    function formatTaskForExport(task, number, isCompleted, filterOldSubtasks) {
                         let text = number + '. ' + task.title + '\\n';
                         text += '   Priority: ' + task.priority.toUpperCase() + ' | Category: ' + task.category;
                         
@@ -3671,13 +3851,30 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                         }
                         
                         if (task.subtasks && task.subtasks.length > 0) {
-                            text += '   Subtasks:\\n';
-                            task.subtasks.forEach(subtask => {
-                                const checkbox = subtask.completed ? '[✓]' : '[ ]';
-                                const dateStr = subtask.completedAt ? 
-                                    ' (' + new Date(subtask.completedAt).toLocaleDateString('en-US') + ')' : '';
-                                text += '     ' + checkbox + ' ' + subtask.text + dateStr + '\\n';
-                            });
+                            // Filter old subtasks if requested
+                            let subtasksToShow = task.subtasks;
+                            if (filterOldSubtasks) {
+                                const sevenDaysAgo = new Date();
+                                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                                subtasksToShow = task.subtasks.filter(subtask => {
+                                    // Keep if not completed OR if completed within last 7 days
+                                    if (!subtask.completed || !subtask.completedAt) {
+                                        return true;
+                                    }
+                                    const completedDate = new Date(subtask.completedAt);
+                                    return completedDate >= sevenDaysAgo;
+                                });
+                            }
+                            
+                            if (subtasksToShow.length > 0) {
+                                text += '   Subtasks:\\n';
+                                subtasksToShow.forEach(subtask => {
+                                    const checkbox = subtask.completed ? '[✓]' : '[ ]';
+                                    const dateStr = subtask.completedAt ? 
+                                        ' (' + new Date(subtask.completedAt).toLocaleDateString('en-US') + ')' : '';
+                                    text += '     ' + checkbox + ' ' + subtask.text + dateStr + '\\n';
+                                });
+                            }
                         }
                         
                         text += '\\n';
@@ -3705,8 +3902,12 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     URL.revokeObjectURL(workerUrl);
                 };
                 
-                // Send tasks to worker
-                worker.postMessage({ tasks: this.tasks });
+                // Get filter setting from checkbox
+                const filterCheckbox = document.getElementById('filter-old-subtasks');
+                const filterOldSubtasks = filterCheckbox ? filterCheckbox.checked : false;
+                
+                // Send tasks and settings to worker
+                worker.postMessage({ tasks: this.tasks, filterOldSubtasks });
             }
 
             closeExportModal() {
