@@ -41,6 +41,7 @@
                 this.fileStorageReady = false;
                 this.loadedArchives = []; // Cache for loaded archived tasks
                 this.archivesLoaded = false;
+                this.selectedArchivedMonth = 'all'; // Track selected month filter
                 
                 this.loadTheme();
                 this.init();
@@ -721,9 +722,29 @@
                 });
 
                 // Filters
-                document.getElementById('filter-select').addEventListener('change', (e) => {
+                document.getElementById('filter-select').addEventListener('change', async (e) => {
                     this.currentFilter = e.target.value;
                     this.resetVirtualScroll(); // Reset pagination when filter changes
+                    
+                    // Show/hide month filter based on archived filter selection
+                    const monthFilter = document.getElementById('archived-month-filter');
+                    if (this.currentFilter === 'archived') {
+                        monthFilter.style.display = 'inline-block';
+                        
+                        // Performance optimization: Just populate dropdown with available months
+                        // Don't load archive data until user selects a month or renders
+                        await this.populateMonthFilter();
+                    } else {
+                        monthFilter.style.display = 'none';
+                        this.selectedArchivedMonth = 'all'; // Reset month selection
+                    }
+                    
+                    this.render();
+                });
+
+                // Archived month filter
+                document.getElementById('archived-month-filter').addEventListener('change', (e) => {
+                    this.selectedArchivedMonth = e.target.value;
                     this.render();
                 });
 
@@ -1968,13 +1989,19 @@
                 let filtered;
                 switch (this.currentFilter) {
                     case 'archived':
-                        // Always load archived tasks from monthly files/localStorage
-                        if (!this.archivesLoaded) {
-                            this.loadedArchives = await this.loadPastYearArchives();
-                            this.archivesLoaded = true;
+                        // Performance optimization: Load only the selected month's data
+                        if (this.selectedArchivedMonth === 'all') {
+                            // Load all archives (original behavior)
+                            if (!this.archivesLoaded) {
+                                this.loadedArchives = await this.loadPastYearArchives();
+                                this.archivesLoaded = true;
+                            }
+                            filtered = this.loadedArchives;
+                        } else {
+                            // Load only the selected month
+                            const [year, month] = this.selectedArchivedMonth.split('-');
+                            filtered = await this.loadArchivedTasksFromMonth(parseInt(year), parseInt(month));
                         }
-                        // Show archived tasks from archive storage
-                        filtered = this.loadedArchives;
                         break;
                     case 'active':
                         // Show non-archived, non-completed tasks
@@ -2049,6 +2076,78 @@
                 }
                 
                 return filtered;
+            }
+            
+            async getArchivedMonths() {
+                // Performance optimization: Just check which archive files exist
+                // Don't load the actual task data until user selects a month
+                const availableMonths = [];
+                
+                if (this.useFileStorage && this.taskDirectoryHandle) {
+                    // File storage mode - check which files actually exist
+                    const now = new Date();
+                    for (let i = 0; i < 24; i++) {
+                        const date = new Date(now);
+                        date.setMonth(date.getMonth() - i);
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const yearMonth = `${year}-${month}`;
+                        const archiveFileName = `archive-${year}-${month}.json`;
+                        
+                        // Check if file exists
+                        try {
+                            await this.taskDirectoryHandle.getFileHandle(archiveFileName, { create: false });
+                            // File exists, add to list
+                            availableMonths.push({ 
+                                value: yearMonth, 
+                                label: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
+                            });
+                        } catch (e) {
+                            // File doesn't exist, skip it
+                        }
+                    }
+                } else {
+                    // localStorage mode - check which archive keys exist
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith('archive_archive-')) {
+                            // Extract year-month from key like "archive_archive-2025-12.json"
+                            const match = key.match(/archive_archive-(\d{4})-(\d{2})\.json/);
+                            if (match) {
+                                const year = match[1];
+                                const month = match[2];
+                                const yearMonth = `${year}-${month}`;
+                                const date = new Date(year, parseInt(month) - 1);
+                                const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                                availableMonths.push({ value: yearMonth, label });
+                            }
+                        }
+                    }
+                    
+                    // Sort newest first
+                    availableMonths.sort((a, b) => b.value.localeCompare(a.value));
+                }
+                
+                return availableMonths;
+            }
+            
+            async populateMonthFilter() {
+                const monthFilter = document.getElementById('archived-month-filter');
+                const months = await this.getArchivedMonths();
+                
+                // Clear existing options except "All Months"
+                monthFilter.innerHTML = '<option value="all">All Months</option>';
+                
+                // Add month options
+                months.forEach(month => {
+                    const option = document.createElement('option');
+                    option.value = month.value;
+                    option.textContent = month.label;
+                    if (month.value === this.selectedArchivedMonth) {
+                        option.selected = true;
+                    }
+                    monthFilter.appendChild(option);
+                });
             }
             
             // UX Enhancement: Show search result count
@@ -3623,56 +3722,6 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             // Indent wrapped lines for multi-line subtask text
                             const indentedText = subtask.text.replace(/\n/g, '\n         ');
                             text += `     ${check} ${indentedText}${dateStr}\n`;
-                        });
-                    }
-                }
-                
-                text += `\n`;
-                return text;
-            }
-
-            // Outlook-optimized plain text formatter
-            formatTaskForOutlookPlain(task, number, isCompleted, isArchived = false, filterOldSubtasks = false) {
-                let text = `${number}. ${task.title}\n`;
-                
-                // Use bullet points and symbols that render well in Outlook
-                text += `   • Priority: ${task.priority.toUpperCase()} | Category: ${task.category}`;
-                
-                if (isCompleted && task.completedAt) {
-                    const date = new Date(task.completedAt).toLocaleDateString('en-US');
-                    text += ` | ✅ Completed: ${date}`;
-                }
-                
-                if (isArchived) {
-                    text += ` | 📦 ARCHIVED`;
-                }
-                
-                text += `\n`;
-                
-                if (task.content) {
-                    text += `   ${task.content.replace(/\n/g, '\n   ')}\n`;
-                }
-                
-                if (task.subtasks && task.subtasks.length > 0) {
-                    let subtasksToShow = task.subtasks;
-                    if (filterOldSubtasks) {
-                        const sevenDaysAgo = new Date();
-                        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                        subtasksToShow = task.subtasks.filter(subtask => {
-                            if (!subtask.completed || !subtask.completedAt) return true;
-                            return new Date(subtask.completedAt) >= sevenDaysAgo;
-                        });
-                    }
-                    
-                    if (subtasksToShow.length > 0) {
-                        text += `   Subtasks:\n`;
-                        subtasksToShow.forEach(subtask => {
-                            const check = subtask.completed ? '✓' : '○';
-                            const dateStr = subtask.completedAt ? 
-                                ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
-                            // Indent wrapped lines for multi-line subtask text
-                            const indentedText = subtask.text.replace(/\n/g, '\n         ');
-                            text += `      ${check} ${indentedText}${dateStr}\n`;
                         });
                     }
                 }
