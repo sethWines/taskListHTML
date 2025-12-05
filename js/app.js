@@ -3104,6 +3104,34 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                                     textSpan.style.opacity = '1';
                                 }
                             }
+                            
+                            // Update or add/remove completion date badge
+                            let dateSpan = subtaskItem.querySelector('.subtask-completed-date');
+                            if (subtask.completed && subtask.completedAt) {
+                                // Format the date
+                                const completedDate = new Date(subtask.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                
+                                if (dateSpan) {
+                                    // Update existing badge
+                                    dateSpan.textContent = `✓ ${completedDate}`;
+                                } else {
+                                    // Create new badge
+                                    dateSpan = document.createElement('span');
+                                    dateSpan.className = 'subtask-completed-date';
+                                    dateSpan.textContent = `✓ ${completedDate}`;
+                                    
+                                    // Insert before the buttons div
+                                    const buttonsDiv = subtaskItem.querySelector('div[style*="margin-left: auto"]');
+                                    if (buttonsDiv) {
+                                        subtaskItem.insertBefore(dateSpan, buttonsDiv);
+                                    } else {
+                                        subtaskItem.appendChild(dateSpan);
+                                    }
+                                }
+                            } else if (dateSpan) {
+                                // Remove badge if subtask is not completed
+                                dateSpan.remove();
+                            }
                         }
                         
                         console.log(`✨ Granular subtask update: ${taskId}/${subtaskId}`);
@@ -3646,7 +3674,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             text += '   Subtasks:\\n';
                             task.subtasks.forEach(subtask => {
                                 const checkbox = subtask.completed ? '[✓]' : '[ ]';
-                                text += '     ' + checkbox + ' ' + subtask.text + '\\n';
+                                const dateStr = subtask.completedAt ? 
+                                    ' (' + new Date(subtask.completedAt).toLocaleDateString('en-US') + ')' : '';
+                                text += '     ' + checkbox + ' ' + subtask.text + dateStr + '\\n';
                             });
                         }
                         
