@@ -781,7 +781,8 @@
                 
                 // Close modal on outside click
                 document.getElementById('export-modal').addEventListener('click', (e) => {
-                    if (e.target.id === 'export-modal') {
+                    // Only close if clicking directly on the modal backdrop, not on the content
+                    if (e.target.id === 'export-modal' && !e.target.closest('.modal-content')) {
                         this.closeExportModal();
                     }
                 });
@@ -3508,9 +3509,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 const completed = nonArchived.filter(t => t.completed);
 
                 // Choose formatter based on format
-                const formatter = format === 'outlook-html' ? 'formatTaskForOutlookHTML' :
-                                format === 'outlook-plain' ? 'formatTaskForOutlookPlain' :
-                                'formatTaskForExport';
+                const formatter = format === 'outlook-html' ? 'formatTaskForOutlookHTML' : 'formatTaskForExport';
 
                 // For HTML format, wrap in HTML structure
                 if (format === 'outlook-html') {
@@ -3518,9 +3517,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     html += `<h2 style="margin-bottom: 8px;">TASK LIST SUMMARY</h2>`;
                     html += `<p style="color: #6b7280; margin: 4px 0 16px 0;">Generated: ${dateStr}</p>`;
                     
-                    html += `<div style="background: #f3f4f6; padding: 12px; border-radius: 8px; margin-bottom: 16px;">`;
-                    html += `<strong>OVERVIEW</strong><br>`;
-                    html += `Total Tasks: ${nonArchived.length} | Active: ${active.length} | Completed: ${completed.length}`;
+                    html += `<div style="background: #1f2937; padding: 12px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #374151;">`;
+                    html += `<strong style="color: #f9fafb;">OVERVIEW</strong><br>`;
+                    html += `<span style="color: #e5e7eb;">Total Tasks: ${nonArchived.length} | Active: ${active.length} | Completed: ${completed.length}</span>`;
                     html += `</div>`;
                     
                     if (active.length > 0) {
@@ -3668,7 +3667,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     if (subtasksToShow.length > 0) {
                         text += `   Subtasks:\n`;
                         subtasksToShow.forEach(subtask => {
-                            const check = subtask.completed ? '✅' : '⭕';
+                            const check = subtask.completed ? '✓' : '○';
                             const dateStr = subtask.completedAt ? 
                                 ` (${new Date(subtask.completedAt).toLocaleDateString('en-US')})` : '';
                             // Indent wrapped lines for multi-line subtask text
@@ -3743,6 +3742,9 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 // Show modal first
                 document.getElementById('export-modal').style.display = 'block';
                 
+                // Make modal draggable
+                this.makeModalDraggable();
+                
                 // Add event listeners for filter checkbox and format radios
                 const filterCheckbox = document.getElementById('filter-old-subtasks');
                 const formatRadios = document.querySelectorAll('input[name="export-format"]');
@@ -3773,6 +3775,87 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 formatRadios.forEach(radio => {
                     radio.addEventListener('change', regenerateExport);
                 });
+            }
+
+            makeModalDraggable() {
+                const modalContent = document.getElementById('export-modal-content');
+                const modalHeader = document.getElementById('export-modal-header');
+                
+                if (!modalContent || !modalHeader) return;
+                
+                // Reset position to center on first show
+                if (!modalContent.hasAttribute('data-positioned')) {
+                    modalContent.style.position = 'fixed';
+                    modalContent.style.top = '50%';
+                    modalContent.style.left = '50%';
+                    modalContent.style.transform = 'translate(-50%, -50%)';
+                    modalContent.setAttribute('data-positioned', 'true');
+                }
+                
+                let isDragging = false;
+                let currentX;
+                let currentY;
+                let initialX;
+                let initialY;
+                
+                const dragStart = (e) => {
+                    // Don't drag if clicking the close button or on inputs
+                    if (e.target.classList.contains('modal-close') || 
+                        e.target.closest('.modal-close') ||
+                        e.target.tagName === 'INPUT' ||
+                        e.target.tagName === 'LABEL') {
+                        return;
+                    }
+                    
+                    isDragging = true;
+                    
+                    // Get current position
+                    const rect = modalContent.getBoundingClientRect();
+                    initialX = e.clientX - rect.left;
+                    initialY = e.clientY - rect.top;
+                    
+                    // Remove transform for dragging
+                    modalContent.style.transform = 'none';
+                    modalHeader.style.cursor = 'grabbing';
+                    e.preventDefault();
+                };
+                
+                const drag = (e) => {
+                    if (isDragging) {
+                        e.preventDefault();
+                        
+                        currentX = e.clientX - initialX;
+                        currentY = e.clientY - initialY;
+                        
+                        // Keep modal within viewport
+                        const maxX = window.innerWidth - modalContent.offsetWidth;
+                        const maxY = window.innerHeight - modalContent.offsetHeight;
+                        
+                        currentX = Math.max(0, Math.min(currentX, maxX));
+                        currentY = Math.max(0, Math.min(currentY, maxY));
+                        
+                        modalContent.style.left = currentX + 'px';
+                        modalContent.style.top = currentY + 'px';
+                        modalContent.style.position = 'fixed';
+                    }
+                };
+                
+                const dragEnd = () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        modalHeader.style.cursor = 'move';
+                    }
+                };
+                
+                // Remove old listeners if they exist
+                modalHeader.removeEventListener('mousedown', dragStart);
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', dragEnd);
+                
+                // Add new listeners
+                modalHeader.addEventListener('mousedown', dragStart);
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', dragEnd);
             }
             
             // Performance Optimization: Generate export in Web Worker (non-blocking)
