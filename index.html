@@ -197,7 +197,7 @@
                             type="search" 
                             id="task-search" 
                             class="task-input" 
-                            placeholder="Search tasks (title, description, subtasks, tags)..." 
+                            placeholder="Search tasks (title, description, notes, subtasks, tags)..." 
                             style="width: 100%; padding-left: 42px; padding-right: 80px;"
                         >
                         <button 
@@ -2014,6 +2014,7 @@
                     id: Date.now(),
                     title,
                     content,
+                    notes: '', // Internal notes - not included in email exports
                     completed: false,
                     archived: false,
                     priority,
@@ -2260,11 +2261,12 @@
                 this.render();
             }
 
-            saveEditTask(id, newTitle, newContent) {
+            saveEditTask(id, newTitle, newContent, newNotes = '') {
                 const task = this.tasks.find(t => t.id === id);
                 if (task) {
                     task.title = newTitle.trim() || task.title;
                     task.content = newContent.trim();
+                    task.notes = newNotes.trim();
                     task.updatedAt = new Date().toISOString();
                     this.saveTasks();
                 }
@@ -2498,6 +2500,9 @@
                         
                         // Search in description/content
                         if (t.content && t.content.toLowerCase().includes(searchLower)) return true;
+                        
+                        // Search in notes
+                        if (t.notes && t.notes.toLowerCase().includes(searchLower)) return true;
                         
                         // Search in subtasks
                         if (t.subtasks && t.subtasks.some(st => st.text.toLowerCase().includes(searchLower))) return true;
@@ -3132,11 +3137,18 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                                         class="task-edit-input" 
                                         rows="3"
                                         id="edit-content-${task.id}"
-                                        placeholder="Task description"
+                                        placeholder="Task description (included in exports)"
                                     >${this.escapeHtml(task.content)}</textarea>
+                                    <textarea 
+                                        class="task-edit-input" 
+                                        rows="3"
+                                        id="edit-notes-${task.id}"
+                                        placeholder="Internal notes (NOT included in email exports)"
+                                        style="border-left: 3px solid var(--accent-color);"
+                                    >${this.escapeHtml(task.notes || '')}</textarea>
                                 </div>
                                 <div class="task-actions" style="margin-top: 8px;">
-                                    <button class="task-action-btn" onclick="taskManager.saveEditTask(${task.id}, document.getElementById('edit-title-${task.id}').value, document.getElementById('edit-content-${task.id}').value)">Save</button>
+                                    <button class="task-action-btn" onclick="taskManager.saveEditTask(${task.id}, document.getElementById('edit-title-${task.id}').value, document.getElementById('edit-content-${task.id}').value, document.getElementById('edit-notes-${task.id}').value)">Save</button>
                                     <button class="task-action-btn" onclick="taskManager.cancelEditTask()">Cancel</button>
                                 </div>
                             </div>
@@ -3166,6 +3178,16 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                             </div>
                             ${!isCollapsed ? `
                                 ${task.content ? `<p class="task-description">${this.escapeHtml(task.content)}</p>` : ''}
+                                ${task.notes ? `
+                                    <div class="task-notes-box">
+                                        <div class="task-notes-header">
+                                            <span class="notes-icon">📝</span>
+                                            <span class="notes-label">Internal Notes</span>
+                                            <span class="notes-hint">(Not included in email exports)</span>
+                                        </div>
+                                        <p class="task-notes-content">${this.escapeHtml(task.notes)}</p>
+                                    </div>
+                                ` : ''}
                                 ${task.tags && task.tags.length > 0 ? `
                                     <div class="task-tags">
                                         ${task.tags.map(tag => `
@@ -5603,8 +5625,27 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                 <label>Description</label>
                 <textarea 
                     id="editor-description"
-                    placeholder="Enter task description"
+                    placeholder="Enter task description (included in email exports)"
                 >${this.escapeHtml(task.content)}</textarea>
+            </div>
+
+            <div class="editor-field">
+                <label>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    Internal Notes
+                    <span style="font-size: 12px; color: #6b7280; font-weight: normal; margin-left: 8px;">(Not included in email exports)</span>
+                </label>
+                <textarea 
+                    id="editor-notes"
+                    placeholder="Enter internal notes (these won't appear in email exports)"
+                    style="border-left: 3px solid var(--accent-color);"
+                >${this.escapeHtml(task.notes || '')}</textarea>
             </div>
 
             <div class="editor-field-group">
@@ -5742,6 +5783,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             // Get updated values
             const title = document.getElementById('editor-title').value.trim();
             const description = document.getElementById('editor-description').value.trim();
+            const notes = document.getElementById('editor-notes').value.trim();
             const priority = document.getElementById('editor-priority').value;
             const category = document.getElementById('editor-category').value.trim();
             const dueDate = document.getElementById('editor-due-date').value;
@@ -5769,6 +5811,7 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             const updatedTask = {
                 title: title,
                 content: description,
+                notes: notes,
                 priority: priority,
                 category: category,
                 dueDate: dueDate || null,
@@ -5886,5 +5929,122 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
             draggedEditorSubtask = null;
         }
     <\/script>
+</body>
+</html>
+                `;
+            }
+
+            // Theme Management
+            loadTheme() {
+                if (this.currentTheme !== 'orange') {
+                    document.documentElement.setAttribute('data-theme', this.currentTheme);
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+                this.updateThemeDropdown();
+            }
+
+            setTheme(theme) {
+                this.currentTheme = theme;
+                localStorage.setItem('theme', theme);
+                this.loadTheme();
+                
+                // Close dropdown after selection
+                const dropdown = document.getElementById('theme-dropdown');
+                if (dropdown) {
+                    dropdown.classList.remove('active');
+                }
+            }
+
+            toggleThemeDropdown() {
+                const dropdown = document.getElementById('theme-dropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('active');
+                }
+            }
+
+            updateThemeDropdown() {
+                // Update active theme option
+                const options = document.querySelectorAll('.theme-option');
+                options.forEach(option => {
+                    const themeValue = option.getAttribute('data-theme');
+                    if (themeValue === this.currentTheme) {
+                        option.classList.add('active');
+                    } else {
+                        option.classList.remove('active');
+                    }
+                });
+            }
+        }
+
+        // Initialize the task manager
+        const taskManager = new TaskManager();
+        
+        // Make taskManager accessible globally for theme selector
+        window.app = taskManager;
+
+        // Close theme dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('theme-dropdown');
+            const themeSelector = document.querySelector('.theme-selector');
+            
+            if (dropdown && themeSelector && !themeSelector.contains(e.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        // Help function
+        function showHelp() {
+            const helpText = `
+TASK LIST MANAGER - QUICK START GUIDE
+
+ADDING TASKS:
+• Enter a title and optional description
+• Select priority (Low, Medium, High)
+• Add a category to organize your tasks
+• Click "Add Task" or press Enter
+
+MANAGING TASKS:
+• ✓ Check the box to mark complete (date tracked automatically)
+• ✏️ Edit to modify title or description
+• 📦 Archive to hide from main view (still searchable)
+• 🗑️ Delete to permanently remove
+
+SUBTASKS (NEXT STEPS):
+• Click "Add Subtask" to break down larger tasks
+• Check off steps as you complete them
+• Edit or delete individual subtasks
+• Track progress with the progress bar
+
+FILTERING:
+• Use the Filter dropdown to view:
+  - All Tasks, Active, or Completed
+  - Filter by Priority (High, Medium, Low)
+  - View Archived tasks
+
+EXPORTING & BACKUP:
+• 📧 Export for Email - Copy formatted list for sharing
+• 💾 Backup Tasks - Download timestamped JSON file
+• 📥 Import Tasks - Restore from backup (merge or replace)
+• 🔄 Auto-Backup - Hourly automatic saves (Chrome/Edge only)
+
+DATA STORAGE:
+• All data saved in your browser's localStorage
+• 100% private - nothing sent to servers
+• Persists between sessions
+• Use backup/import to move between computers
+
+TIPS:
+• Archive completed tasks weekly to keep lists clean
+• Create manual backups before browser maintenance
+• Use priorities to focus on what matters
+• Break big tasks into subtasks for better tracking
+
+Need more details? Check the full documentation or contact your team lead.
+            `.trim();
+
+            alert(helpText);
+        }
+    </script>
 </body>
 </html>

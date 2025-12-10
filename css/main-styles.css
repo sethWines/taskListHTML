@@ -726,6 +726,58 @@
             opacity: 0.7;
         }
 
+        /* Internal Notes Box */
+        .task-notes-box {
+            background: rgba(var(--accent-rgb, 255, 168, 52), 0.05);
+            border: 1px solid rgba(var(--accent-rgb, 255, 168, 52), 0.2);
+            border-left: 3px solid var(--accent-color, #ffa834);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box;
+        }
+
+        .task-notes-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-color, #ffa834);
+        }
+
+        .notes-icon {
+            font-size: 14px;
+        }
+
+        .notes-label {
+            color: var(--accent-color, #ffa834);
+        }
+
+        .notes-hint {
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-secondary, #8b949e);
+            font-style: italic;
+        }
+
+        .task-notes-content {
+            font-size: 14px;
+            color: var(--text-primary, #c9d1d9);
+            margin: 0;
+            word-break: break-word;
+            white-space: pre-wrap;
+            line-height: 1.5;
+            opacity: 0.9;
+        }
+
+        .task-item.completed .task-notes-box {
+            opacity: 0.6;
+        }
+
         /* Subtasks */
         .subtasks-section {
             margin-top: 16px;
