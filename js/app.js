@@ -51,27 +51,44 @@
                 this.setupEventListeners();
                 this.setupStorageSync(); // Add cross-tab synchronization
                 
-                // Try to restore file storage handle if enabled
+                // Priority: Config file (if handles exist) → localStorage → default to browser storage
+                // First, try to restore file storage handle if localStorage says file storage is enabled
                 if (this.useFileStorage) {
                     const restored = await this.restoreFileStorageHandle();
                     if (restored) {
-                        // Load tasks from file (includes auto-migration)
-                        const fileTasks = await this.loadFromFile();
-                        if (fileTasks.length > 0) {
-                            this.tasks = fileTasks;
-                            // Initialize collapsed state
-                            this.tasks.forEach(task => {
-                                if (!(task.id in this.collapsedTasks)) {
-                                    this.collapsedTasks[task.id] = true;
-                                }
-                            });
+                        // After restoring handle, check config file for preference (source of truth)
+                        const config = await this.readStorageConfig();
+                        if (config && config.useFileStorage !== undefined) {
+                            // Config file is source of truth - update localStorage to match
+                            this.useFileStorage = config.useFileStorage;
+                            localStorage.setItem('useFileStorage', config.useFileStorage ? 'true' : 'false');
+                        }
+                        
+                        if (this.useFileStorage) {
+                            // Load tasks from file (includes auto-migration)
+                            const fileTasks = await this.loadFromFile();
+                            if (fileTasks.length > 0) {
+                                this.tasks = fileTasks;
+                                // Initialize collapsed state
+                                this.tasks.forEach(task => {
+                                    if (!(task.id in this.collapsedTasks)) {
+                                        this.collapsedTasks[task.id] = true;
+                                    }
+                                });
+                            }
+                        } else {
+                            // Config file says browser storage, switch to it
+                            this.fileStorageReady = false;
+                            await this.autoMigrateArchivedTasks();
                         }
                     } else {
-                        // File storage failed, disable it
-                        this.useFileStorage = false;
-                        localStorage.setItem('useFileStorage', 'false');
+                        // Handle restoration failed - localStorage says file storage but handles are missing
+                        // Keep preference as file storage (will need user to reconnect later)
+                        // Don't disable it - the config file will restore it when user reconnects
+                        console.log('⚠️ File storage handles missing, but preference is file storage. User will need to reconnect.');
                     }
                 } else {
+                    // localStorage says browser storage - use it
                     // Using localStorage - auto-migrate any archived tasks
                     await this.autoMigrateArchivedTasks();
                 }
@@ -1009,6 +1026,9 @@
                 }
                 
                 try {
+                    // Ensure config file exists (for backward compatibility)
+                    await this.ensureConfigFileExists();
+                    
                     // Check permission (don't request here, it should already be granted)
                     const permission = await this.taskFileHandle.queryPermission({ mode: 'readwrite' });
                     if (permission !== 'granted') {
@@ -1169,6 +1189,24 @@
                     await this.saveFileHandle(fileHandle, 'taskFile');
                     await this.saveFileHandle(dirHandle, 'taskDirectory');
                     
+                    // Generate unique directory ID if not exists
+                    let directoryId = localStorage.getItem('taskDirectoryId');
+                    if (!directoryId) {
+                        directoryId = 'dir-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                        localStorage.setItem('taskDirectoryId', directoryId);
+                    }
+                    
+                    // Create/update config file with storage preference (source of truth)
+                    const config = {
+                        useFileStorage: true,
+                        directoryId: directoryId,
+                        directoryName: dirHandle.name,
+                        setupDate: new Date().toISOString(),
+                        version: '1.0',
+                        appName: 'Task List Manager'
+                    };
+                    await this.writeStorageConfig(config);
+                    
                     this.fileStorageReady = true;
                     this.useFileStorage = true;
                     localStorage.setItem('useFileStorage', 'true');
@@ -1198,20 +1236,44 @@
                         // Verify directory permission
                         const dirPermission = await dirHandle.queryPermission({ mode: 'readwrite' });
                         if (dirPermission === 'granted') {
+                            // Set directory handle temporarily to read config file
+                            this.taskDirectoryHandle = dirHandle;
+                            
+                            // Check config file for preference (source of truth)
+                            const config = await this.readStorageConfig();
+                            if (config && config.useFileStorage === false) {
+                                // Config file says browser storage - don't restore file storage
+                                console.log('📝 Config file indicates browser storage, not restoring file handles');
+                                this.taskDirectoryHandle = null;
+                                return false;
+                            }
+                            
                             // Try to get tasks.json from directory
                             try {
                                 const fileHandle = await dirHandle.getFileHandle('tasks.json', { create: false });
-                                this.taskDirectoryHandle = dirHandle;
                                 this.taskFileHandle = fileHandle;
                                 this.fileStorageReady = true;
                                 console.log('✅ File storage handle restored (directory method)');
+                                
+                                // Update localStorage to match config file preference if it exists
+                                if (config && config.useFileStorage !== undefined) {
+                                    this.useFileStorage = config.useFileStorage;
+                                    localStorage.setItem('useFileStorage', config.useFileStorage ? 'true' : 'false');
+                                }
+                                
                                 return true;
                             } catch (e) {
                                 console.warn('Directory found but tasks.json missing, will create it');
                                 const fileHandle = await dirHandle.getFileHandle('tasks.json', { create: true });
-                                this.taskDirectoryHandle = dirHandle;
                                 this.taskFileHandle = fileHandle;
                                 this.fileStorageReady = true;
+                                
+                                // Update localStorage to match config file preference if it exists
+                                if (config && config.useFileStorage !== undefined) {
+                                    this.useFileStorage = config.useFileStorage;
+                                    localStorage.setItem('useFileStorage', config.useFileStorage ? 'true' : 'false');
+                                }
+                                
                                 return true;
                             }
                         }
@@ -1238,6 +1300,16 @@
                         this.taskFileHandle = handle;
                         this.fileStorageReady = true;
                         console.log('✅ File storage handle restored (file method)');
+                        
+                        // Try to read config file if we can get directory handle
+                        if (this.taskDirectoryHandle) {
+                            const config = await this.readStorageConfig();
+                            if (config && config.useFileStorage !== undefined) {
+                                this.useFileStorage = config.useFileStorage;
+                                localStorage.setItem('useFileStorage', config.useFileStorage ? 'true' : 'false');
+                            }
+                        }
+                        
                         return true;
                     } else {
                         console.warn('⚠️ File storage permission not granted');
@@ -1316,6 +1388,97 @@
                     });
                 } catch (e) {
                     console.error('Failed to remove file handle:', e);
+                }
+            }
+            
+            // ==================== STORAGE CONFIG FILE ====================
+            
+            async readStorageConfig() {
+                // Read .taskmanager-config.json from the task directory
+                if (!this.taskDirectoryHandle) {
+                    return null;
+                }
+                
+                try {
+                    const configFileHandle = await this.taskDirectoryHandle.getFileHandle('.taskmanager-config.json', { create: false });
+                    const file = await configFileHandle.getFile();
+                    const text = await file.text();
+                    const config = JSON.parse(text);
+                    console.log('✅ Read storage config from file');
+                    return config;
+                } catch (e) {
+                    if (e.name === 'NotFoundError') {
+                        console.log('📝 No storage config file found (backward compatibility)');
+                        return null;
+                    }
+                    console.error('Failed to read storage config:', e);
+                    return null;
+                }
+            }
+            
+            async writeStorageConfig(config) {
+                // Write .taskmanager-config.json to the task directory
+                if (!this.taskDirectoryHandle) {
+                    console.warn('⚠️ Cannot write config file: no directory handle');
+                    return false;
+                }
+                
+                try {
+                    const configFileHandle = await this.taskDirectoryHandle.getFileHandle('.taskmanager-config.json', { create: true });
+                    const writable = await configFileHandle.createWritable();
+                    await writable.write(JSON.stringify(config, null, 2));
+                    await writable.close();
+                    console.log('✅ Wrote storage config to file');
+                    return true;
+                } catch (e) {
+                    console.error('Failed to write storage config:', e);
+                    return false;
+                }
+            }
+            
+            async attemptConfigFileRecovery() {
+                // Try to find config file by checking if we have a directory handle
+                // If not, we can't recover without user interaction, so return null
+                // This method is called when localStorage is cleared but we want to check config
+                if (this.taskDirectoryHandle) {
+                    return await this.readStorageConfig();
+                }
+                
+                // If we don't have a directory handle, we can't read the config file
+                // The user will need to reconnect via restoreFileStorageHandle recovery flow
+                return null;
+            }
+            
+            async ensureConfigFileExists() {
+                // Ensure config file exists for backward compatibility
+                // If directory handle exists but config file doesn't, create it
+                if (!this.taskDirectoryHandle || !this.useFileStorage) {
+                    return;
+                }
+                
+                try {
+                    const config = await this.readStorageConfig();
+                    if (!config) {
+                        // Config file doesn't exist - create it for backward compatibility
+                        console.log('📝 Creating config file for existing file storage setup (backward compatibility)');
+                        let directoryId = localStorage.getItem('taskDirectoryId');
+                        if (!directoryId) {
+                            directoryId = 'dir-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                            localStorage.setItem('taskDirectoryId', directoryId);
+                        }
+                        
+                        const newConfig = {
+                            useFileStorage: true,
+                            directoryId: directoryId,
+                            directoryName: this.taskDirectoryHandle.name,
+                            setupDate: new Date().toISOString(),
+                            version: '1.0',
+                            appName: 'Task List Manager'
+                        };
+                        await this.writeStorageConfig(newConfig);
+                    }
+                } catch (e) {
+                    console.warn('Failed to ensure config file exists:', e);
                 }
             }
             
@@ -2484,6 +2647,19 @@ ${info.percentUsed >= 75 ? '⚠️ Consider exporting old tasks to free space!' 
                     const fileTasks = await this.loadFromFile();
                     if (fileTasks.length > 0) {
                         this.tasks = fileTasks;
+                    }
+                    
+                    // Update config file to reflect browser storage preference
+                    if (this.taskDirectoryHandle) {
+                        const config = {
+                            useFileStorage: false,
+                            directoryId: localStorage.getItem('taskDirectoryId') || 'unknown',
+                            directoryName: this.taskDirectoryHandle.name,
+                            setupDate: new Date().toISOString(),
+                            version: '1.0',
+                            appName: 'Task List Manager'
+                        };
+                        await this.writeStorageConfig(config);
                     }
                     
                     // Switch to localStorage
